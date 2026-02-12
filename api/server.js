@@ -18,10 +18,9 @@ app.use(cors());
 app.use(require('morgan')('dev'));
 app.use(express.json());
 
-// Limitador de peticiones para evitar abusos
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100 // límite de 100 peticiones por ventana 
+  max: 5000 // Aumentado para permitir pruebas de carga y simulador
 });
 //Esto es para evitar ataques de fuerza bruta como cuando intentan adivinar la contraseña o el token, pero no es infalible. 
 //Para mayor seguridad se debe implementar un sistema de autenticación de dos factores.

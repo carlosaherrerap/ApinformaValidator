@@ -96,6 +96,12 @@ const requestToken = async (req, res) => {
     const { id } = req.params;
     let { telefono, operador, via } = req.body;
 
+    // Validación de formato UUID para evitar errores de base de datos (500)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+        return res.status(400).json({ error: 'Formato de ID de cliente inválido' });
+    }
+
     try {
         const client = await Client.findByPk(id);
         if (!client) {
@@ -232,6 +238,11 @@ const requestToken = async (req, res) => {
 const verifyToken = async (req, res) => {
     const { id, token } = req.params;
 
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+        return res.status(400).json({ error: 'Formato de ID de cliente inválido' });
+    }
+
     try {
         const client = await Client.findByPk(id);
         if (!client) {
@@ -351,6 +362,11 @@ const finalizeRegistration = async (req, res) => {
     const { id } = req.params;
     const { correo, departamento, provincia, distrito, accept } = req.body;
 
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+        return res.status(400).json({ error: 'Formato de ID de cliente inválido' });
+    }
+
     try {
         const client = await Client.findByPk(id);
         if (!client) {
@@ -396,6 +412,12 @@ const finalizeRegistration = async (req, res) => {
  */
 const cancelToken = async (req, res) => {
     const { id } = req.params;
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+        return res.status(400).json({ error: 'Formato de ID de cliente inválido' });
+    }
+
     try {
         const client = await Client.findByPk(id);
         if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -430,6 +452,12 @@ const cancelToken = async (req, res) => {
  */
 const expireToken = async (req, res) => {
     const { id } = req.params;
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+        return res.status(400).json({ error: 'Formato de ID de cliente inválido' });
+    }
+
     try {
         const tokenRecord = await Token.findOne({
             where: { id_client: id, status: 'P' },
@@ -457,6 +485,12 @@ const expireToken = async (req, res) => {
  */
 const getCooldownStatus = async (req, res) => {
     const { id, via } = req.params;
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+        return res.status(400).json({ error: 'Formato de ID de cliente inválido' });
+    }
+
     try {
         const { Op } = require('sequelize');
         const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
