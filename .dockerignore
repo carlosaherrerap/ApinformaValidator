@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+Dockerfile
+docker-compose.yml
+.git
+.gitignore
+.env
+README.md
+API_DOCUMENTATION.md
+scripts/
+brain/
+.gemini/

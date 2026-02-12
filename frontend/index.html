@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InformaPerú - Registro Seguro</title>
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --dark-bg: #0f172a;
+            --card-bg: #1e293b;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--dark-bg);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .auth-card {
+            background: var(--card-bg);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1.5rem;
+            padding: 2.5rem;
+            width: 100%;
+            max-width: 450px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            transition: all 0.3s ease;
+        }
+
+        .step-display {
+            display: none;
+        }
+
+        .step-display.active {
+            display: block;
+            animation: fadeIn 0.4s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .form-control,
+        .form-select {
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            border-radius: 0.75rem;
+            padding: 0.75rem 1rem;
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-color: var(--primary);
+            color: white;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            border: none;
+            border-radius: 0.75rem;
+            padding: 0.75rem;
+            font-weight: 600;
+        }
+
+        .btn-primary:hover {
+            background-color: #1d4ed8;
+        }
+
+        .text-muted {
+            color: #94a3b8 !important;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="auth-card">
+        <div class="text-center mb-4">
+            <div class="badge bg-primary mb-2">Registro Seguro</div>
+            <h2 class="fw-bold">InformaPerú</h2>
+            <p class="text-muted small">Complete su información con total seguridad</p>
+        </div>
+
+        <!-- PASO 1: DATOS PERSONALES -->
+        <div id="step1" class="step-display active">
+            <div class="mb-3">
+                <label class="form-label small text-muted">Tipo de Documento</label>
+                <select id="tipo_documento" class="form-select" onchange="updateDocValidation()">
+                    <option value="DNI">DNI (8 dígitos)</option>
+                    <option value="RUC">RUC (11 dígitos)</option>
+                    <option value="CDE">Carnet Extranjería (9 dígitos)</option>
+                </select>
+            </div>
+            <div class="row gx-2 mb-3">
+                <div class="col-8">
+                    <label class="form-label small text-muted">Número de Documento</label>
+                    <input type="text" id="documento" class="form-control" placeholder="12345678" maxlength="8"
+                        oninput="validateNumber(this)">
+                </div>
+                <div class="col-4">
+                    <label class="form-label small text-muted">D.V</label>
+                    <input type="text" id="dv" class="form-control" placeholder="9" maxlength="1"
+                        oninput="validateNumber(this)">
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label small text-muted">Nombres</label>
+                <input type="text" id="nombres" class="form-control" placeholder="Ej. Juan">
+            </div>
+            <div class="row gx-2 mb-4">
+                <div class="col">
+                    <label class="form-label small text-muted">Ap. Paterno</label>
+                    <input type="text" id="ap_paterno" class="form-control" placeholder="Ej. Pérez">
+                </div>
+                <div class="col">
+                    <label class="form-label small text-muted">Ap. Materno</label>
+                    <input type="text" id="ap_materno" class="form-control" placeholder="Ej. Gómez">
+                </div>
+            </div>
+            <button onclick="handleStep1()" class="btn btn-primary w-100">Siguiente</button>
+        </div>
+
+        <!-- PASO 2: CELULAR Y TOKEN -->
+        <div id="step2" class="step-display">
+            <div class="mb-3">
+                <label class="form-label small text-muted">Número Celular</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-transparent border-secondary text-white">+51</span>
+                    <input type="text" id="telefono" class="form-control" placeholder="900000000" maxlength="9"
+                        oninput="validateNumber(this)">
+                </div>
+                <div id="warning-phone" class="text-warning small mt-1 d-none" style="font-size: 0.75rem;"></div>
+            </div>
+            <div class="mb-4">
+                <label class="form-label small text-muted">Operador</label>
+                <select id="operador" class="form-select">
+                    <option value="MOVISTAR">MOVISTAR</option>
+                    <option value="CLARO">CLARO</option>
+                    <option value="ENTEL">ENTEL</option>
+                    <option value="BITEL">BITEL</option>
+                </select>
+            </div>
+            <div class="mb-4">
+                <label class="form-label small text-muted">Medio de Verificación</label>
+                <select id="via" class="form-select">
+                    <option value="S">📱 SMS</option>
+                    <option value="W">💬 WhatsApp</option>
+                </select>
+            </div>
+            <button onclick="handleStep2()" class="btn btn-primary w-100">Obtener Código</button>
+            <button onclick="changeStep(1)"
+                class="btn btn-link text-muted w-100 mt-2 small text-decoration-none">Volver</button>
+        </div>
+
+        <!-- PASO 3: VERIFICACIÓN -->
+        <div id="step3" class="step-display">
+            <div class="text-center mb-4">
+                <i class="bi bi-shield-lock-fill text-primary" style="font-size: 2rem;"></i>
+                <h5 class="mt-2">Verificar Celular</h5>
+                <p class="text-muted small">Ingrese el código de 4 caracteres enviado.</p>
+            </div>
+            <input type="text" id="input_token" class="form-control text-center fs-2 fw-bold tracking-widest mb-3"
+                maxlength="4" placeholder="....">
+
+            <!-- Area de error no intrusiva -->
+            <div id="token-error" class="text-danger small text-center mb-3 d-none fw-bold"
+                style="background: rgba(220, 53, 69, 0.1); padding: 8px; border-radius: 8px;"></div>
+
+            <div id="countdown" class="text-center small text-primary mb-3">Expira en 02:30</div>
+            <button onclick="handleStep3()" class="btn btn-primary w-100">VERIFICAR</button>
+            <div class="row g-2 mt-2">
+                <div class="col-6">
+                    <button onclick="cancelVerification()"
+                        class="btn btn-outline-secondary w-100 btn-sm">CANCELAR</button>
+                </div>
+                <div class="col-6">
+                    <button onclick="handleStep2()" id="btn-resend" class="btn btn-outline-primary w-100 btn-sm"
+                        disabled>RE-ENVIAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PASO 4: DATOS FINALES Y TÉRMINOS -->
+        <div id="step4" class="step-display">
+            <div class="text-center mb-4">
+                <h5 class="fw-bold">Finalizar Registro</h5>
+                <p class="text-muted small">Casi terminamos...</p>
+            </div>
+            <div class="mb-3">
+                <label class="form-label small text-muted">Correo Electrónico</label>
+                <input type="email" id="email_final" class="form-control" placeholder="usuario@ejemplo.com">
+            </div>
+            <div class="mb-3">
+                <label class="form-label small text-muted">Ubicación</label>
+                <div class="row gx-1">
+                    <div class="col"><input type="text" id="dept" class="form-control small" placeholder="Dep."></div>
+                    <div class="col"><input type="text" id="prov" class="form-control small" placeholder="Prov."></div>
+                    <div class="col"><input type="text" id="dist" class="form-control small" placeholder="Distr."></div>
+                </div>
+            </div>
+            <div class="form-check mb-4">
+                <input class="form-check-input" type="checkbox" id="accept_terms" onchange="toggleFinalBtn()">
+                <label class="form-check-label small text-muted" for="accept_terms">
+                    Acepto los términos y condiciones.
+                </label>
+            </div>
+            <button id="btn-finalize" onclick="handleStepFinalize()" class="btn btn-primary w-100"
+                disabled>REGISTRAR</button>
+        </div>
+
+        <!-- RESULTADO -->
+        <div id="step-final" class="step-display text-center">
+            <div class="bg-success rounded-circle d-inline-block p-3 mb-3">
+                <svg width="40" height="40" fill="white" viewBox="0 0 16 16">
+                    <path
+                        d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.235.235 0 0 1 .02-.022z" />
+                </svg>
+            </div>
+            <h3 class="fw-bold text-white">¡Éxito!</h3>
+            <p class="text-muted">Registro validado y completado exitosamente.</p>
+        </div>
+
+    </div>
+
+    <script>
+        const API_BASE = "http://localhost:3000/v1/api/client";
+        let clientId = null;
+
+        /** Filtra solo números en tiempo real **/
+        function validateNumber(el) {
+            el.value = el.value.replace(/[^0-9]/g, '');
+        }
+
+        /** Actualiza el maxlength según el tipo de documento **/
+        function updateDocValidation() {
+            const tipo = document.getElementById('tipo_documento').value;
+            const docInput = document.getElementById('documento');
+
+            if (tipo === 'DNI') docInput.maxLength = 8;
+            else if (tipo === 'RUC') docInput.maxLength = 11;
+            else if (tipo === 'CDE') docInput.maxLength = 9;
+
+            // Limpiar si el valor actual excede el nuevo máximo
+            if (docInput.value.length > docInput.maxLength) {
+                docInput.value = docInput.value.substring(0, docInput.maxLength);
+            }
+        }
+
+        function changeStep(n) {
+            document.querySelectorAll('.step-display').forEach(s => s.classList.remove('active'));
+            document.getElementById('step' + (n === 'final' ? '-final' : n)).classList.add('active');
+
+            // Re-habilitar inputs por si venimos de un bloqueo previo
+            if (n === 3) {
+                const tokenInput = document.getElementById('input_token');
+                tokenInput.disabled = false;
+                tokenInput.classList.remove('bg-dark', 'text-muted');
+                tokenInput.value = '';
+                document.getElementById('token-error').classList.add('d-none');
+            }
+        }
+
+        function toggleFinalBtn() {
+            const check = document.getElementById('accept_terms').checked;
+            document.getElementById('btn-finalize').disabled = !check;
+        }
+
+        async function handleStep1() {
+            const tipo = document.getElementById('tipo_documento').value;
+            const doc = document.getElementById('documento').value;
+            const dv = document.getElementById('dv').value;
+
+            // Validaciones Estrictas en Front
+            if (tipo === 'DNI' && doc.length !== 8) return alert('DNI debe tener 8 dígitos');
+            if (tipo === 'RUC' && doc.length !== 11) return alert('RUC debe tener 11 dígitos');
+            if (tipo === 'CDE' && doc.length !== 9) return alert('CDE debe tener 9 dígitos');
+            if (dv.length !== 1) return alert('DV debe ser 1 dígito');
+            if (!/^\d+$/.test(doc)) return alert('Documento debe ser numérico');
+
+            const payload = {
+                tipo_documento: tipo,
+                documento: doc,
+                digito_verificador: dv,
+                nombres: document.getElementById('nombres').value,
+                apellido_paterno: document.getElementById('ap_paterno').value,
+                apellido_materno: document.getElementById('ap_materno').value
+            };
+
+            try {
+                const res = await fetch(API_BASE, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (res.ok) {
+                    clientId = json.data.id;
+                    if (json.message.includes('proceso')) {
+                        alert(json.message);
+                    }
+                    changeStep(2);
+                } else {
+                    if (json.code === 'ALREADY_VALIDATED') {
+                        alert('⚠️ Usted ya se ha validado anteriormente.');
+                    } else {
+                        alert('Error: ' + json.error);
+                    }
+                }
+            } catch (err) { alert('Error conectando a la API'); }
+        }
+
+        async function handleStep2() {
+            const tel = document.getElementById('telefono').value;
+            const op = document.getElementById('operador').value;
+            if (tel.length !== 9) return alert('Celular debe tener 9 dígitos');
+
+            const payload = {
+                telefono: tel,
+                operador: op,
+                via: document.getElementById('via').value
+            };
+
+            try {
+                const res = await fetch(`${API_BASE}/${clientId}/token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                console.log('[API] Respuesta requestToken:', json);
+
+                // Mostrar advertencia de reuso si existe
+                const warningEl = document.getElementById('warning-phone');
+                if (json.warning) {
+                    warningEl.innerText = json.warning.message;
+                    warningEl.classList.remove('d-none');
+                } else {
+                    warningEl.classList.add('d-none');
+                }
+
+                if (res.ok) {
+                    changeStep(3);
+                    startTimer(json.data.expires_in_seconds);
+                } else {
+                    alert(json.message || json.error);
+                }
+            } catch (err) { alert('Error conectando a la API'); }
+        }
+
+        async function handleStep3() {
+            const token = document.getElementById('input_token').value;
+            const errorEl = document.getElementById('token-error');
+            errorEl.classList.add('d-none'); // Limpiar error previo
+
+            if (!token || token.length !== 4) {
+                errorEl.innerText = "INGRESE LOS 4 CARACTERES";
+                errorEl.classList.remove('d-none');
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API_BASE}/${clientId}/verify/${token}`);
+                const json = await res.json();
+                console.log('[API] Respuesta verifyToken:', json);
+
+                if (res.ok) {
+                    changeStep(4);
+                } else {
+                    // Mostrar error en pantalla sin alert intrusivo
+                    errorEl.innerText = json.error.toUpperCase();
+                    errorEl.classList.remove('d-none');
+
+                    // Bloquear interfaz si llegó al máximo de intentos
+                    if (json.code === 'ERR_MAX_ATTEMPTS') {
+                        document.getElementById('input_token').disabled = true;
+                        document.getElementById('input_token').classList.add('bg-dark', 'text-muted');
+                    }
+                }
+            } catch (err) {
+                errorEl.innerText = "ERROR DE CONEXIÓN";
+                errorEl.classList.remove('d-none');
+            }
+        }
+
+        async function cancelVerification() {
+            if (!confirm('¿Desea cancelar la verificación? Esto contará como un intento fallido.')) return;
+            try {
+                await fetch(`${API_BASE}/${clientId}/cancel`, { method: 'POST' });
+                changeStep(2);
+                if (timerInterval) clearInterval(timerInterval);
+            } catch (err) { alert('Error al cancelar'); }
+        }
+
+        async function handleStepFinalize() {
+            const email = document.getElementById('email_final').value;
+            if (!email.includes('@')) return alert('Correo electrónico inválido');
+
+            const payload = {
+                correo: email,
+                departamento: document.getElementById('dept').value,
+                provincia: document.getElementById('prov').value,
+                distrito: document.getElementById('dist').value,
+                accept: document.getElementById('accept_terms').checked
+            };
+
+            try {
+                const res = await fetch(`${API_BASE}/${clientId}/finalize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (res.ok) {
+                    changeStep('final');
+                } else {
+                    alert(json.error);
+                }
+            } catch (err) { alert('Error conectando a la API'); }
+        }
+
+        // Función para consultar cuánto tiempo falta (para uso en consola o lógica de UI)
+        async function checkCooldown(via) {
+            try {
+                const res = await fetch(`${API_BASE}/${clientId}/cooldown/${via}`);
+                const json = await res.json();
+                console.table(json.data);
+                return json.data;
+            } catch (err) { console.error('Error consultando cooldown:', err); }
+        }
+
+        let timerInterval = null;
+        function startTimer(seconds) {
+            if (timerInterval) clearInterval(timerInterval);
+
+            const endTime = Date.now() + (seconds * 1000);
+            const countdownEl = document.getElementById('countdown');
+            const resendBtn = document.getElementById('btn-resend');
+            resendBtn.disabled = true;
+
+            timerInterval = setInterval(async () => {
+                const now = Date.now();
+                const timeLeft = Math.max(0, Math.floor((endTime - now) / 1000));
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    resendBtn.disabled = false;
+                    countdownEl.innerText = "Token expirado";
+                    countdownEl.classList.add('text-danger');
+
+                    // Notificar al API que expiró sin respuesta
+                    try {
+                        await fetch(`${API_BASE}/${clientId}/expire`, { method: 'POST' });
+                    } catch (e) { console.error('Error reportando expiración'); }
+                } else {
+                    const mins = Math.floor(timeLeft / 60);
+                    const secs = timeLeft % 60;
+                    countdownEl.innerText = `Expira en ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+                    countdownEl.classList.remove('text-danger');
+                }
+            }, 500);
+        }
+    </script>
+</body>
+
+</html>

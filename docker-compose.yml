@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: validator_db_engine
+    restart: always
+    environment:
+      POSTGRES_USER: api_manager
+      POSTGRES_PASSWORD: api_secure_vault_2026
+      POSTGRES_DB: core_validator_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - api_postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+
+  api:
+    build: .
+    container_name: validator_api_service
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://api_manager:api_secure_vault_2026@db:5432/core_validator_db
+      PORT: 3000
+    depends_on:
+      - db
+
+volumes:
+  api_postgres_data:
