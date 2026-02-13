@@ -20,7 +20,7 @@ app.use(express.json());
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 5000 // Aumentado para permitir pruebas de carga y simulador
+  max: 2000000 // Aumentado significativamente para permitir pruebas de carga masivas
 });
 //Esto es para evitar ataques de fuerza bruta como cuando intentan adivinar la contraseña o el token, pero no es infalible. 
 //Para mayor seguridad se debe implementar un sistema de autenticación de dos factores.
