@@ -1,0 +1,40 @@
+🚀 Iniciando Prueba de Carga: 5 req / 2 simultáneos
+🔗 API: http://localhost:3000/v1/api
+
+2026-02-17 17:37:13,704 [INFO] HTTP Request: POST http://localhost:3000/v1/api/auth/login "HTTP/1.1 200 OK"
+2026-02-17 17:37:13,707 [INFO] HTTP Request: POST http://localhost:3000/v1/api/auth/login "HTTP/1.1 200 OK"
+2026-02-17 17:37:13,727 [INFO] HTTP Request: POST http://localhost:3000/v1/api/client "HTTP/1.1 201 Created"
+2026-02-17 17:37:13,729 [INFO] HTTP Request: POST http://localhost:3000/v1/api/client "HTTP/1.1 201 Created"
+2026-02-17 17:37:13,822 [INFO] HTTP Request: POST http://localhost:3000/v1/api/client/5b4332b4-8c50-4a84-895c-2b29988c047b/token "HTTP/1.1 503 Service Unavailable"
+2026-02-17 17:37:13,823 [INFO] [FAILED] scenario_full_flow: Fallo Token (ID:39355211)
+2026-02-17 17:37:13,837 [INFO] HTTP Request: POST http://localhost:3000/v1/api/client "HTTP/1.1 201 Created"
+2026-02-17 17:37:15,044 [INFO] HTTP Request: POST http://localhost:3000/v1/api/client/bbe0af9f-8f2c-4615-b8be-5cdadb309919/token "HTTP/1.1 200 OK"
+2026-02-17 17:37:15,047 [INFO] HTTP Request: POST http://localhost:3000/v1/api/client/fb86f7d3-8cf5-4e88-ac6a-93f564b3de5c/token "HTTP/1.1 200 OK"
+2026-02-17 17:37:15,061 [INFO] HTTP Request: GET http://localhost:3000/v1/api/stats/tokens/0cf37167-2928-4bc9-81b3-d0d9bc913620 "HTTP/1.1 200 OK"
+2026-02-17 17:37:15,063 [INFO] HTTP Request: GET http://localhost:3000/v1/api/stats/tokens/c4a531c4-4c6f-4ac4-84b9-33cf6c9eeebf "HTTP/1.1 200 OK"
+2026-02-17 17:37:15,081 [INFO] HTTP Request: GET http://localhost:3000/v1/api/client/bbe0af9f-8f2c-4615-b8be-5cdadb309919/verify/tQWq "HTTP/1.1 200 OK"
+2026-02-17 17:37:15,085 [INFO] HTTP Request: GET http://localhost:3000/v1/api/client/fb86f7d3-8cf5-4e88-ac6a-93f564b3de5c/verify/DLWh "HTTP/1.1 200 OK"
+2026-02-17 17:37:15,143 [INFO] HTTP Request: POST http://localhost:3000/v1/api/client/fb86f7d3-8cf5-4e88-ac6a-93f564b3de5c/finalize "HTTP/1.1 200 OK"
+2026-02-17 17:37:15,144 [INFO] [SUCCESS] scenario_full_flow: PROCESADO OK (Doc:536988747)
+2026-02-17 17:37:15,146 [INFO] HTTP Request: POST http://localhost:3000/v1/api/client/bbe0af9f-8f2c-4615-b8be-5cdadb309919/finalize "HTTP/1.1 200 OK"
+2026-02-17 17:37:15,147 [INFO] [SUCCESS] scenario_full_flow: PROCESADO OK (Doc:02760419263)
+2026-02-17 17:37:15,204 [INFO] HTTP Request: POST http://localhost:3000/v1/api/client "HTTP/1.1 201 Created"
+2026-02-17 17:37:15,208 [INFO] HTTP Request: POST http://localhost:3000/v1/api/client "HTTP/1.1 201 Created"
+2026-02-17 17:37:15,298 [INFO] HTTP Request: POST http://localhost:3000/v1/api/client/9e49453a-4bb3-4ac0-b5fc-0125c2f5136c/token "HTTP/1.1 503 Service Unavailable"
+2026-02-17 17:37:15,299 [INFO] [FAILED] scenario_full_flow: Fallo Token (ID:338118500)
+2026-02-17 17:37:15,699 [INFO] HTTP Request: POST http://localhost:3000/v1/api/client/bcb61593-3692-48d3-8aaf-6333c1d6a0b6/token "HTTP/1.1 200 OK"
+2026-02-17 17:37:15,711 [INFO] HTTP Request: GET http://localhost:3000/v1/api/stats/tokens/606ed41d-bcdd-4dd4-a883-f4b675e6c7ff "HTTP/1.1 200 OK"
+2026-02-17 17:37:15,729 [INFO] HTTP Request: GET http://localhost:3000/v1/api/client/bcb61593-3692-48d3-8aaf-6333c1d6a0b6/verify/f7qQ "HTTP/1.1 200 OK"
+2026-02-17 17:37:15,784 [INFO] HTTP Request: POST http://localhost:3000/v1/api/client/bcb61593-3692-48d3-8aaf-6333c1d6a0b6/finalize "HTTP/1.1 200 OK"
+2026-02-17 17:37:15,785 [INFO] [SUCCESS] scenario_full_flow: PROCESADO OK (Doc:61563742)
+
+==================================================
+📊 RESULTADOS FINALES
+==================================================
+Peticiones Totales: 5
+Exitosas:          3
+Fallidas:          2
+Tiempo Total:      2.35s
+Throughput:        2.13 req/s
+Latencia Media:    734.15 ms
+==================================================

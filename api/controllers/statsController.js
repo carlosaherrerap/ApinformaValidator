@@ -4,9 +4,7 @@ const Client = require('../models/Client');
 const Token = require('../models/Token');
 const ResultSend = require('../models/ResultSend');
 
-// ════════════════════════════════════════════════════
-// DASHBOARD STATS
-// ════════════════════════════════════════════════════
+//DASHBOARD DE ESTADISTICAS
 const getDashboardStats = async (req, res) => {
     try {
         const totalClientes = await Client.count();
@@ -51,9 +49,7 @@ const getDashboardStats = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// LISTA DE CLIENTES (paginada)
-// ════════════════════════════════════════════════════
+///PAGiNACION DE CLIENTES TOTALES
 const getClients = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
@@ -104,9 +100,7 @@ const getClients = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// DETALLE DE UN CLIENTE
-// ════════════════════════════════════════════════════
+//DETALLES DE CLIENTE
 const getClientDetail = async (req, res) => {
     const { id } = req.params;
 
@@ -135,9 +129,7 @@ const getClientDetail = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// VER TOKEN DESENCRIPTADO (Solo con permiso can_view_tokens)
-// ════════════════════════════════════════════════════
+//ENCRIPTAR TOKEN
 const getTokenPlaintext = async (req, res) => {
     const { tokenId } = req.params;
 
@@ -147,8 +139,8 @@ const getTokenPlaintext = async (req, res) => {
             return res.status(404).json({ error: 'Token no encontrado' });
         }
 
-        // El código se almacena en texto plano en el campo 'codigo'
-        // y el hash en 'codigo_hash' para verificación
+        // El código se almacena en texto plano en el campo 'codigo'-->TK9h
+        // y el hash en 'codigo_hash' para verificación -->asfsdf#$5sDfsd3
         console.log(`[ADMIN] Token ${tokenId} visualizado por ${req.user.username}`);
 
         return res.status(200).json({

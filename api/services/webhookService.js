@@ -1,7 +1,7 @@
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 /**
- * Servicio para enviar notificaciones Webhook a sistemas externos
+ * Envío de notificaciones Webhook 
  */
 const sendWebhook = async (event, data) => {
     const webhookUrl = process.env.WEBHOOK_URL;

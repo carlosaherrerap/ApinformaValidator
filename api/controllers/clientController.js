@@ -38,9 +38,7 @@ async function findOrCreateResult(clienteId, via) {
     return record;
 }
 
-// ════════════════════════════════════════════════════
-// PASO 1: REGISTRO DE DATOS PERSONALES
-// ════════════════════════════════════════════════════
+//REGISTRO DEL CLIENTE, SUS DATOS PERSONALES
 const registerClient = async (req, res) => {
     try {
         let { tipo_documento, documento, dv, nombres, ap_paterno, ap_materno } = req.body;
@@ -82,7 +80,7 @@ const registerClient = async (req, res) => {
             return res.status(400).json({ error: 'Apellido materno inválido' });
         }
 
-        // ── Verificar existencia ──
+        // ── Verificar existencia de docuemnto ──
         const existing = await Client.findOne({ where: { documento } });
 
         if (existing) {
@@ -92,14 +90,14 @@ const registerClient = async (req, res) => {
                     code: 'ALREADY_REGISTERED'
                 });
             }
-            // Estado FALSE → registro en proceso, permitir continuar
+            // Estado FALSE --→ registro en proceso, permitir continuar
             return res.status(200).json({
                 message: 'Registro en proceso. Continuando...',
                 data: { id: existing.id }
             });
         }
 
-        // ── Crear cliente ──
+        //  Crear cliente 
         const client = await Client.create({
             tipo_doc: tipo_documento,
             documento,
@@ -111,7 +109,7 @@ const registerClient = async (req, res) => {
 
         console.log(`[API] Cliente registrado: ${documento} (${tipo_documento})`);
 
-        // Webhook: Registro Inicial
+        // Webhook: Registro Inicial <---aun pendiente
         sendWebhook('client.registered', {
             id: client.id,
             documento: client.documento,
@@ -130,9 +128,7 @@ const registerClient = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// PASO 2: SOLICITAR TOKEN (SMS o WhatsApp)
-// ════════════════════════════════════════════════════
+//SOLICITAR EL TOKEN
 const requestToken = async (req, res) => {
     const { id } = req.params;
     let { celular, operador, via } = req.body;
@@ -149,7 +145,7 @@ const requestToken = async (req, res) => {
             return res.status(400).json({ error: 'Ya se registró anteriormente.', code: 'ALREADY_REGISTERED' });
         }
 
-        // Normalización
+        // LIMOPIANDO EL TELEFONO
         celular = String(celular || '').trim();
         operador = String(operador || '').trim().toUpperCase();
         via = String(via || '').trim().toUpperCase();
@@ -164,7 +160,7 @@ const requestToken = async (req, res) => {
             return res.status(400).json({ error: 'Medio no válido (S=SMS, W=WhatsApp)' });
         }
 
-        // ── COOLDOWN POR MEDIO ──
+        //  CANTIDAD DE INTENTOS DE POR MEDIO
         const resultado = await findOrCreateResult(id, via);
 
         if (resultado.intentos >= 3 && resultado.ultimo_intento) {
@@ -184,7 +180,7 @@ const requestToken = async (req, res) => {
             }
         }
 
-        // Actualizar datos del cliente
+        // INSERTANDO FASE 2 DE TELEFONO TOKEN Y VERIFICACION, MEDIO
         await client.update({ celular, operador });
 
         // Generar token
@@ -201,27 +197,37 @@ const requestToken = async (req, res) => {
             ip_solicitante: ip
         });
 
-        // Enviar token al cliente
-        const mensaje = `Estimado ${client.nombres} su token es ${codigo}`;
-        console.log(`[TOKEN] ${via === 'S' ? 'SMS' : 'WhatsApp'} → ${celular}: ${mensaje} [IP: ${ip}]`);
+        // ENVIAR TOKEN AL CLIENTE (Omitir si es simulación)
+        const simHeader = req.headers['x-simulator'];
+        const isSimulator = String(simHeader) === 'true';
+
+        console.log(`[DEBUG] Request Token - Client: ${client.documento}, Via: ${via}, x-simulator Header: "${simHeader}", isSimulator: ${isSimulator}`);
 
         let envioResult = { success: false };
-        if (via === 'S') {
-            envioResult = await sendSMS(celular, mensaje);
-            if (!envioResult.success) {
-                console.warn(`[SMS] Fallo envío a ${celular}:`, envioResult.error);
-            }
+        const mensaje = `Estimado ${client.nombres} su token es ${codigo}`;
+
+        if (isSimulator) {
+            console.log(`[SIMULADOR] Modo Silencioso activado para cliente ${client.documento}. Evitando servicios externos.`);
+            envioResult = { success: true };
         } else {
-            const waStatus = getWAStatus();
-            if (waStatus.status !== 'connected') {
-                return res.status(503).json({
-                    error: 'WhatsApp no está conectado. El administrador debe escanear el QR primero.',
-                    code: 'ERR_WA_DISCONNECTED'
-                });
-            }
-            envioResult = await sendWhatsApp(celular, mensaje);
-            if (!envioResult.success) {
-                console.warn(`[WA] Fallo envío a ${celular}:`, envioResult.error);
+            console.log(`[TOKEN] ${via === 'S' ? 'SMS' : 'WhatsApp'} → ${celular}: ${mensaje} [IP: ${ip}]`);
+            if (via === 'S') {
+                envioResult = await sendSMS(celular, mensaje);
+                if (!envioResult.success) {
+                    console.warn(`[SMS] Fallo envío a ${celular}:`, envioResult.error);
+                }
+            } else {
+                const waStatus = getWAStatus();
+                if (waStatus.status !== 'connected') {
+                    return res.status(503).json({
+                        error: 'WhatsApp no está conectado. El administrador debe escanear el QR primero.',
+                        code: 'ERR_WA_DISCONNECTED'
+                    });
+                }
+                envioResult = await sendWhatsApp(celular, mensaje);
+                if (!envioResult.success) {
+                    console.warn(`[WA] Fallo envío a ${celular}:`, envioResult.error);
+                }
             }
         }
 
@@ -242,9 +248,7 @@ const requestToken = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// PASO 3: VERIFICAR TOKEN
-// ════════════════════════════════════════════════════
+//VERIFICAR EL TOKEN
 const verifyToken = async (req, res) => {
     const { id, token } = req.params;
 
@@ -260,7 +264,7 @@ const verifyToken = async (req, res) => {
             return res.status(400).json({ error: 'Ya validado anteriormente.', code: 'ALREADY_REGISTERED' });
         }
 
-        // Token pendiente más reciente
+        // TOKEN PENDIENTE MAS RECIENTE
         const tokenRecord = await Token.findOne({
             where: { id_cliente: id, status: 'P' },
             order: [['created_at', 'DESC']]
@@ -298,7 +302,7 @@ const verifyToken = async (req, res) => {
             });
         }
 
-        // ── Comparar token ──
+        //  Comparar token 
         if (tokenRecord.codigo !== token) {
             const newIntentos = (resultado.intentos || 0) + 1;
             await resultado.update({
@@ -318,13 +322,13 @@ const verifyToken = async (req, res) => {
             });
         }
 
-        // ── TOKEN CORRECTO ──
+        //  TOKEN CORRECTO 
         await tokenRecord.update({ status: 'V' });
         await resultado.update({ bloqueado: false });
 
         console.log(`[API] Token verificado exitosamente para ${client.documento}`);
 
-        // Webhook: Celular Validado
+        // Webhook: Celular Validado <---aun pendiente
         sendWebhook('client.validated', {
             id: client.id,
             celular: client.celular,
@@ -343,9 +347,7 @@ const verifyToken = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// PASO 4: FINALIZAR REGISTRO
-// ════════════════════════════════════════════════════
+//FINALIZAR EL REGISTRO DEL CLIENTE
 const finalizeRegistration = async (req, res) => {
     const { id } = req.params;
     const { correo, departamento, provincia, distrito, acepto_terminos } = req.body;
@@ -406,9 +408,7 @@ const finalizeRegistration = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// CANCELAR TOKEN (desde modal)
-// ════════════════════════════════════════════════════
+//CANCELAR EL TOKEN
 const cancelToken = async (req, res) => {
     const { id } = req.params;
     if (!UUID_REGEX.test(id)) return res.status(400).json({ error: 'ID inválido' });
@@ -445,9 +445,7 @@ const cancelToken = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// EXPIRAR TOKEN (sin respuesta)
-// ════════════════════════════════════════════════════
+//EXPIRAR EL TOKEN
 const expireToken = async (req, res) => {
     const { id } = req.params;
     if (!UUID_REGEX.test(id)) return res.status(400).json({ error: 'ID inválido' });
@@ -477,9 +475,7 @@ const expireToken = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// ESTADO DE COOLDOWN (ambos medios)
-// ════════════════════════════════════════════════════
+//ESTADO DE LOS INTENTOS-COOLDOWN
 const getCooldownStatus = async (req, res) => {
     const { id } = req.params;
     if (!UUID_REGEX.test(id)) return res.status(400).json({ error: 'ID inválido' });

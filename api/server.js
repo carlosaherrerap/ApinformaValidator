@@ -10,8 +10,8 @@ const { sequelize, testConnection } = require('./config/database');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ──── Middleware ────
-const staticPath = path.resolve(__dirname, '../frontend');
+//  Middleware 
+const staticPath = path.resolve(__dirname, '../frontend');// Ruta de la carpeta frontend
 console.log(`[DEBUG] Sirviendo archivos estáticos desde: ${staticPath}`);
 app.use(express.static(staticPath));
 app.get('/test-admin', (req, res) => {
@@ -35,7 +35,7 @@ const limiter = rateLimit({
 });
 app.use('/v1/api/', limiter);
 
-// ──── Rutas ────
+//  Rutas 
 app.use('/v1/api/client', require('./routes/clientRoutes'));
 app.use('/v1/api/auth', require('./routes/authRoutes'));
 app.use('/v1/api/stats', require('./routes/statsRoutes'));
@@ -50,7 +50,7 @@ app.get('/v1/api/status', (req, res) => {
   });
 });
 
-// ──── Iniciar Servidor ────
+// Iniciar Servidor 
 const start = async () => {
   try {
     await testConnection();

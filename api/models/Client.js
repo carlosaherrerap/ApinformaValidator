@@ -3,7 +3,7 @@ const { sequelize } = require('../config/database');
 
 const Client = sequelize.define('cliente', {
     id: {
-        type: DataTypes.UUID,
+        type: DataTypes.UUID,//paquete de npm
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },

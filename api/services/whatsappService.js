@@ -1,5 +1,5 @@
 /**
- * Servicio de WhatsApp via Baileys
+ * Envío de WhatsApp via Baileys
  * Permite conectar una cuenta de WhatsApp escaneando QR y enviar mensajes.
  */
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
@@ -29,9 +29,9 @@ async function emitQR(qr) {
     }
 }
 
-/**
- * Inicializar conexión WhatsApp.
- */
+
+//Iniciar conexión WhatsApp.
+
 async function initWhatsApp() {
     if (connectionStatus === 'connecting') {
         console.log('[WA] Ya se está conectando...');
@@ -91,19 +91,19 @@ async function initWhatsApp() {
     });
 }
 
-/**
- * Enviar mensaje de WhatsApp.
- * @param {string} number - Número de teléfono (9 dígitos, se agrega 51 automáticamente)
- * @param {string} message - Texto del mensaje
- * @returns {Promise<{success: boolean, error?: string}>}
- */
+
+//Enviar mensaje de WhatsApp.
+//number - Número de teléfono (9 dígitos, se agrega 51 automáticamente)
+//message - Texto del mensaje
+//return {Promise<{success: boolean, error?: string}>}
+
 async function sendWhatsApp(number, message) {
     if (connectionStatus !== 'connected' || !sock) {
         return { success: false, error: 'WhatsApp no está conectado. Escanee el QR primero.' };
     }
 
     try {
-        // Formatear número a formato WhatsApp (51XXXXXXXXX@s.whatsapp.net)
+        // Formatear número a formato WhatsApp
         const cleanNumber = number.replace(/\D/g, '');
         const jid = cleanNumber.length === 9 ? `51${cleanNumber}@s.whatsapp.net` : `${cleanNumber}@s.whatsapp.net`;
 
@@ -117,9 +117,9 @@ async function sendWhatsApp(number, message) {
     }
 }
 
-/**
- * Obtener estado actual de la conexión.
- */
+
+//Obtener estado actual de la conexión.
+
 function getStatus() {
     return {
         status: connectionStatus,
@@ -128,9 +128,8 @@ function getStatus() {
     };
 }
 
-/**
- * Desconectar WhatsApp (cerrar sesión).
- */
+//Desconectar WhatsApp (cerrar sesión).
+
 async function logout() {
     if (sock) {
         try {

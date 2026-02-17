@@ -6,9 +6,7 @@ const { initWhatsApp, getStatus: getWAStatus, logout: logoutWA } = require('../s
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_token_2026_informa';
 
-// ════════════════════════════════════════════════════
-// LOGIN
-// ════════════════════════════════════════════════════
+//HECHO PARA EL LOGIN DE USUARIOS(ADMIN, USUARIO NORMAL)
 const login = async (req, res) => {
     const { username, password } = req.body;
 
@@ -59,9 +57,7 @@ const login = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// CREAR USUARIO (Solo Admin)
-// ════════════════════════════════════════════════════
+//CREAR USUARIOS(SOLO ADMITIDO POR EL ROL-->ADMIN)
 const createUser = async (req, res) => {
     const { username, password, email, rol_id } = req.body;
 
@@ -81,7 +77,7 @@ const createUser = async (req, res) => {
             username,
             password: hashedPassword,
             email,
-            rol_id: rol_id || 3 // Default: VIEWER
+            rol_id: rol_id || 3 //  'VIEWER' por defecto
         });
 
         console.log(`[ADMIN] Usuario creado: ${username} por ${req.user.username}`);
@@ -96,9 +92,7 @@ const createUser = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// ACTUALIZAR PERMISOS DE USUARIO (Solo Admin)
-// ════════════════════════════════════════════════════
+//ACTUAOZAR PERMISOS DE LOS USUARIOS NORMALES
 const updateUserPermissions = async (req, res) => {
     const { userId } = req.params;
     const { can_view_stats, can_view_tokens, status } = req.body;
@@ -133,9 +127,7 @@ const updateUserPermissions = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// LISTAR USUARIOS (Solo Admin)
-// ════════════════════════════════════════════════════
+//MOSTRADNO TODOS LOS USUARIOS(SOLO ADMIN)
 const getUsers = async (req, res) => {
     try {
         const users = await User.findAll({
@@ -151,9 +143,7 @@ const getUsers = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// EDITAR PERFIL PROPIO (Cualquier usuario autenticado)
-// ════════════════════════════════════════════════════
+//EDITANDO PERFIL
 const updateProfile = async (req, res) => {
     const { email, photo, current_password, new_password } = req.body;
 
@@ -197,9 +187,7 @@ const updateProfile = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// OBTENER PERFIL PROPIO
-// ════════════════════════════════════════════════════
+//OBTENIEDNO LA VISTA DE PERFIL
 const getProfile = async (req, res) => {
     try {
         const user = await User.findByPk(req.user.id, {
@@ -227,9 +215,7 @@ const getProfile = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// WHATSAPP QR — Iniciar conexión (Solo Admin)
-// ════════════════════════════════════════════════════
+//iniciando codigo para validar  QR de conexion a whatsapp
 const startWhatsApp = async (req, res) => {
     try {
         await initWhatsApp();
@@ -240,17 +226,13 @@ const startWhatsApp = async (req, res) => {
     }
 };
 
-// ════════════════════════════════════════════════════
-// WHATSAPP STATUS + QR
-// ════════════════════════════════════════════════════
+//GENRANDO QR
 const getWhatsAppStatus = async (req, res) => {
     const status = getWAStatus();
     return res.status(200).json(status);
 };
 
-// ════════════════════════════════════════════════════
-// WHATSAPP LOGOUT (Solo Admin)
-// ════════════════════════════════════════════════════
+///CERRANDO SESION DE WHATSAPP
 const whatsAppLogout = async (req, res) => {
     try {
         await logoutWA();

@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Sequelize } = require('sequelize');
 
+//CONFIGURACION DE LA BASE DE DATOS
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
     dialect: 'postgres',
     logging: false,
@@ -17,6 +18,8 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
         idle: 10000
     }
 });
+
+//TEST DE CONEXION A LA BASE DE DATOS
 
 const testConnection = async (retries = 5) => {
     for (let i = 0; i < retries; i++) {
