@@ -1,83 +1,92 @@
--- Extensiones necesarias
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Tabla de Roles
+-- ROL
 CREATE TABLE IF NOT EXISTS rol (
     id SERIAL PRIMARY KEY,
-    nombre VARCHAR(50) NOT NULL UNIQUE, -- 'ADMINISTRADOR', 'USUARIO_REPORTE'
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    nombre VARCHAR(50) NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tabla de Usuarios (Empresa que usa la API)
-CREATE TABLE IF NOT EXISTS usuarios (
+INSERT INTO rol (nombre) VALUES ('ADMIN'), ('OPERATOR'), ('VIEWER')
+ON CONFLICT (nombre) DO NOTHING;
+
+-- USUARIO
+CREATE TABLE IF NOT EXISTS usuario (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     username VARCHAR(100) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
-    rol_id INT REFERENCES rol(id),
-    mfa_secret VARCHAR(255), -- Para TOTP/Autenticador
-    status BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    rol_id INTEGER REFERENCES rol(id),
+    can_view_stats BOOLEAN DEFAULT false,
+    can_view_tokens BOOLEAN DEFAULT false,
+    photo VARCHAR(500),
+    status BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tabla de Clientes (Los 200k+ registros)
-CREATE TABLE IF NOT EXISTS client_token (
+-- Admin por defecto: admin / admin2026
+-- Hash bcrypt de 'admin2026'
+INSERT INTO usuario (username, password, email, rol_id, can_view_stats, can_view_tokens)
+VALUES (
+    'admin',
+    '$2b$10$.6C7As44nN4RV8SoN/UZYOZ0CUEWUVVNqkH8uuXIJVWAviJ0ETJmQu',
+    'admin@tokenizer.pe',
+    1,
+    true,
+    true
+) ON CONFLICT (username) DO NOTHING;
+
+-- CLIENTE
+CREATE TABLE IF NOT EXISTS cliente (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    document VARCHAR(20) NOT NULL UNIQUE,
-    typeof CHAR(3) NOT NULL CHECK (typeof IN ('RUC', 'DNI', 'CDE')),
-    digit_very CHAR(1) NOT NULL,
-    names VARCHAR(255),
-    lastname_paternal VARCHAR(255), -- Apellido Paterno según imagen
-    lastname_maternal VARCHAR(255), -- Apellido Materno según imagen
-    cellphone VARCHAR(15), -- Opcional inicialmente
-    operator VARCHAR(50), -- Opcional inicialmente
+    tipo_doc CHAR(3) NOT NULL CHECK (tipo_doc IN ('DNI', 'RUC', 'CDE')),
+    documento VARCHAR(11) NOT NULL UNIQUE,
+    dv CHAR(1) NOT NULL,
+    nombres VARCHAR(100) NOT NULL,
+    ap_paterno VARCHAR(100) NOT NULL,
+    ap_materno VARCHAR(100) NOT NULL,
+    celular CHAR(9),
+    operador VARCHAR(10),
     email VARCHAR(255),
-    dept VARCHAR(100),
-    prov VARCHAR(100),
-    distr VARCHAR(100),
-    allow SMALLINT DEFAULT 2, -- 1: Validado, 2: En proceso ,0: Bloqueado
-    accept BOOLEAN DEFAULT FALSE, -- Términos y condiciones
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    departamento VARCHAR(100),
+    provincia VARCHAR(100),
+    distrito VARCHAR(100),
+    acepto_terminos BOOLEAN DEFAULT false,
+    estado BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tabla de Tokens
+-- TOKEN
 CREATE TABLE IF NOT EXISTS token (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    id_client UUID REFERENCES client_token(id) ON DELETE CASCADE,
-    request CHAR(4) NOT NULL, -- Token de 4 caracteres
-    via CHAR(1) NOT NULL CHECK (via IN ('S', 'W', 'I', 'C')), -- SMS, WHATSAPP, IVR, CORREO
-    date_request TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    expiration_time TIMESTAMP NOT NULL, -- Fecha de vencimiento
-    time_lapsed INT, -- Segundos que duró activo antes de validarse o vencer
-    attempts_failed INT DEFAULT 0,
-    status CHAR(1) DEFAULT 'P' CHECK (status IN ('P', 'V', 'E', 'X')), -- PENDIENTE, VALIDADO, EXPIRADO, CANCELADO
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id_cliente UUID NOT NULL REFERENCES cliente(id),
+    codigo VARCHAR(5) NOT NULL,
+    codigo_hash VARCHAR(255) NOT NULL,
+    via CHAR(1) NOT NULL CHECK (via IN ('S', 'W')),
+    status CHAR(1) DEFAULT 'P' CHECK (status IN ('P', 'V', 'E', 'X')),
+    ip_solicitante VARCHAR(45),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tabla de Auditoría y Seguimiento (result_send)
-CREATE TABLE IF NOT EXISTS result_send (
+-- RESULTADO ENVIO (cooldown por medio)
+CREATE TABLE IF NOT EXISTS resultado_envio (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    id_client UUID REFERENCES client_token(id) ON DELETE CASCADE,
-    id_token UUID REFERENCES token(id) ON DELETE CASCADE,
-    ip VARCHAR(45), -- Captura de IP (v4/v6)
-    attempts_failed INT DEFAULT 0,
-    attempts_correct INT DEFAULT 0,
-    attempts_no_response INT DEFAULT 0,
-    via CHAR(1), -- Medio usado
-    provider_status VARCHAR(100), -- Estado devuelto por la API externa (e.g. 'ENVIADO', 'PROCESADO')
-    raw_log JSONB, -- Logs adicionales del proveedor
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id_cliente UUID NOT NULL REFERENCES cliente(id),
+    via CHAR(1) NOT NULL CHECK (via IN ('S', 'W')),
+    intentos INTEGER DEFAULT 0,
+    ultimo_intento TIMESTAMPTZ,
+    bloqueado BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (id_cliente, via)
 );
 
--- Inserción de roles iniciales
-INSERT INTO rol (nombre) VALUES ('ADMINISTRADOR'), ('USUARIO_REPORTE') ON CONFLICT DO NOTHING;
-
--- Índices para optimizar búsquedas masivas (2M registros)
-CREATE INDEX idx_client_document ON client_token(document);
-CREATE INDEX idx_token_client ON token(id_client);
-CREATE INDEX idx_result_client ON result_send(id_client);
+-- Índices
+CREATE INDEX IF NOT EXISTS idx_cliente_documento ON cliente(documento);
+CREATE INDEX IF NOT EXISTS idx_token_cliente ON token(id_cliente);
+CREATE INDEX IF NOT EXISTS idx_token_status ON token(status);
+CREATE INDEX IF NOT EXISTS idx_resultado_cliente_via ON resultado_envio(id_cliente, via);

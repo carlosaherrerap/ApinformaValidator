@@ -1,29 +1,31 @@
 services:
   db:
     image: postgres:15-alpine
-    container_name: validator_db_engine
+    container_name: tokenizer_db
     restart: always
     environment:
       POSTGRES_USER: api_manager
       POSTGRES_PASSWORD: api_secure_vault_2026
-      POSTGRES_DB: core_validator_db
+      POSTGRES_DB: TOKENIZER_HUANCAYO
     ports:
       - "5433:5432"
     volumes:
-      - api_postgres_data:/var/lib/postgresql/data
+      - tokenizer_data:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
 
   api:
     build: .
-    container_name: validator_api_service
+    container_name: tokenizer_api
     restart: always
     ports:
       - "3000:3000"
     environment:
-      DATABASE_URL: postgres://api_manager:api_secure_vault_2026@db:5432/core_validator_db
+      DATABASE_URL: postgres://api_manager:api_secure_vault_2026@db:5432/TOKENIZER_HUANCAYO
       PORT: 3000
+      JWT_SECRET: super_secret_token_2026_informa
+      TOKEN_LENGTH: 4
     depends_on:
       - db
 
 volumes:
-  api_postgres_data:
+  tokenizer_data:

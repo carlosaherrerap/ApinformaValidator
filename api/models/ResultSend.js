@@ -1,61 +1,43 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 const Client = require('./Client');
-const Token = require('./Token');
 
-const ResultSend = sequelize.define('result_send', {
+const ResultSend = sequelize.define('resultado_envio', {
     id: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },
-    id_client: {
+    id_cliente: {
         type: DataTypes.UUID,
-        references: {
-            model: Client,
-            key: 'id'
-        }
-    },
-    id_token: {
-        type: DataTypes.UUID,
-        references: {
-            model: Token,
-            key: 'id'
-        }
-    },
-    ip: {
-        type: DataTypes.STRING(45)
-    },
-    attempts_failed: {
-        type: DataTypes.INTEGER,
-        defaultValue: 0
-    },
-    attempts_correct: {
-        type: DataTypes.INTEGER,
-        defaultValue: 0
-    },
-    attempts_no_response: {
-        type: DataTypes.INTEGER,
-        defaultValue: 0
+        allowNull: false,
+        references: { model: Client, key: 'id' }
     },
     via: {
-        type: DataTypes.CHAR(1)
+        type: DataTypes.CHAR(1),
+        allowNull: false,
+        validate: { isIn: [['S', 'W']] }
     },
-    provider_status: {
-        type: DataTypes.STRING(100)
+    intentos: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0
     },
-    raw_log: {
-        type: DataTypes.JSONB
+    ultimo_intento: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    bloqueado: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
     }
 }, {
-    tableName: 'result_send',
-    underscored: true
+    tableName: 'resultado_envio',
+    indexes: [
+        { unique: true, fields: ['id_cliente', 'via'] }
+    ]
 });
 
-// Relaciones
-Client.hasMany(ResultSend, { foreignKey: 'id_client' });
-Token.hasMany(ResultSend, { foreignKey: 'id_token' });
-ResultSend.belongsTo(Client, { foreignKey: 'id_client' });
-ResultSend.belongsTo(Token, { foreignKey: 'id_token' });
+Client.hasMany(ResultSend, { foreignKey: 'id_cliente' });
+ResultSend.belongsTo(Client, { foreignKey: 'id_cliente' });
 
 module.exports = ResultSend;

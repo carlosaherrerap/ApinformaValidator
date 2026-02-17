@@ -1,72 +1,64 @@
-const { DataTypes } = require('sequelize');//sirve para definir los tipos de datos de las columnas
-const { sequelize } = require('../config/database');//sirve para conectar con la base de datos
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-const Client = sequelize.define('client_token', {
+const Client = sequelize.define('cliente', {
     id: {
         type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4, //la UUIDV4 es para generar un identificador único universal como un DNI pero para la base de datos por ejemplo 12345678901234567890123456789012 que usa 32 caracteres
+        defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },
-    document: {
-        type: DataTypes.STRING(20), //el 20 es para que acepte hasta 20 caracteres
+    tipo_doc: {
+        type: DataTypes.CHAR(3),
+        allowNull: false,
+        validate: { isIn: [['DNI', 'RUC', 'CDE']] }
+    },
+    documento: {
+        type: DataTypes.STRING(11),
         allowNull: false,
         unique: true
     },
-    typeof: {
-        type: DataTypes.CHAR(3),
-        allowNull: false,
-        validate: {
-            isIn: [['RUC', 'DNI', 'CDE']]//el CDE es para carnet de extranjeria
-        }
-    },
-    digit_very: {
+    dv: {
         type: DataTypes.CHAR(1),
         allowNull: false
     },
-    names: {
-        type: DataTypes.STRING(255)
+    nombres: {
+        type: DataTypes.STRING(100),
+        allowNull: false
     },
-    lastname_paternal: {
-        type: DataTypes.STRING(255)
+    ap_paterno: {
+        type: DataTypes.STRING(100),
+        allowNull: false
     },
-    lastname_maternal: {
-        type: DataTypes.STRING(255)
+    ap_materno: {
+        type: DataTypes.STRING(100),
+        allowNull: false
     },
-    cellphone: {
-        type: DataTypes.STRING(15),
-        allowNull: true
+    celular: {
+        type: DataTypes.CHAR(9)
     },
-    operator: {
-        type: DataTypes.STRING(50),
-        allowNull: true
+    operador: {
+        type: DataTypes.STRING(10)
     },
     email: {
-        type: DataTypes.STRING(255),
-        allowNull: true
+        type: DataTypes.STRING(255)
     },
-    dept: {
-        type: DataTypes.STRING(255),
-        allowNull: true
+    departamento: {
+        type: DataTypes.STRING(100)
     },
-    prov: {
-        type: DataTypes.STRING(255),
-        allowNull: true
+    provincia: {
+        type: DataTypes.STRING(100)
     },
-    distr: {
-        type: DataTypes.STRING(255),
-        allowNull: true
+    distrito: {
+        type: DataTypes.STRING(100)
     },
-    allow: {
-        type: DataTypes.SMALLINT,
-        defaultValue: 2 // 1: Validado (SI), 2: En proceso, 0: Bloqueado (NO)
+    acepto_terminos: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
     },
-    accept: {
+    estado: {
         type: DataTypes.BOOLEAN,
         defaultValue: false
     }
-}, {
-    tableName: 'client_token',
-    underscored: true
-});
+}, { tableName: 'cliente' });
 
 module.exports = Client;

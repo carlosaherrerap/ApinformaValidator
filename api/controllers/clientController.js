@@ -1,42 +1,65 @@
 const Client = require('../models/Client');
 const Token = require('../models/Token');
 const ResultSend = require('../models/ResultSend');
-const { generateToken } = require('../utils/tokenUtils');
+const { generateToken, hashToken } = require('../utils/tokenUtils');
+const { sendSMS } = require('../services/smsService');
+const { sendWhatsApp, getStatus: getWAStatus } = require('../services/whatsappService');
+const { sendWebhook } = require('../services/webhookService');
 
-/**
- * Registra un nuevo cliente en la base de datos.
- * Corresponde al primer paso del formulario (Datos personales).
- */
+// ──── HELPERS ────
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function getCleanIp(req) {
+    const raw = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || req.ip;
+    return raw.includes('::ffff:') ? raw.split(':').pop() : raw;
+}
+
+function getCooldownSeconds(intentos) {
+    if (intentos === 3) return 90;     // 1.5 min
+    if (intentos === 4) return 180;    // 3 min
+    if (intentos === 5) return 300;    // 5 min
+    if (intentos === 6) return 600;    // 10 min
+    if (intentos === 7) return 1800;   // 30 min
+    return 3600;                       // 1 hora
+}
+
+async function findOrCreateResult(clienteId, via) {
+    let record = await ResultSend.findOne({
+        where: { id_cliente: clienteId, via }
+    });
+    if (!record) {
+        record = await ResultSend.create({
+            id_cliente: clienteId,
+            via,
+            intentos: 0,
+            bloqueado: false
+        });
+    }
+    return record;
+}
+
+// ════════════════════════════════════════════════════
+// PASO 1: REGISTRO DE DATOS PERSONALES
+// ════════════════════════════════════════════════════
 const registerClient = async (req, res) => {
     try {
-        let {
-            tipo_documento,
-            documento,
-            digito_verificador,
-            nombres,
-            apellido_paterno,
-            apellido_materno
-        } = req.body;
+        let { tipo_documento, documento, dv, nombres, ap_paterno, ap_materno } = req.body;
 
-        // Limpiar espacios y normalizar
+        // Normalización
         tipo_documento = String(tipo_documento || '').trim().toUpperCase();
         documento = String(documento || '').trim();
-        digito_verificador = String(digito_verificador || '').trim();
+        dv = String(dv || '').trim();
         nombres = String(nombres || '').trim();
-        apellido_paterno = String(apellido_paterno || '').trim();
-        apellido_materno = String(apellido_materno || '').trim();
+        ap_paterno = String(ap_paterno || '').trim();
+        ap_materno = String(ap_materno || '').trim();
 
-        // Validaciones del API
+        // ── Validaciones Backend ──
         if (!['DNI', 'RUC', 'CDE'].includes(tipo_documento)) {
             return res.status(400).json({ error: 'Tipo de documento inválido (DNI, RUC, CDE)' });
         }
-
-        // Dígito verificador solo números
-        if (!/^\d+$/.test(digito_verificador)) {
-            return res.status(400).json({ error: 'El dígito verificador debe ser un número, no una letra' });
+        if (!/^\d+$/.test(documento)) {
+            return res.status(400).json({ error: 'El documento debe contener solo números' });
         }
-
-        // Validar longitudes estrictas ante strings limpios
         if (tipo_documento === 'DNI' && documento.length !== 8) {
             return res.status(400).json({ error: 'DNI debe tener exactamente 8 dígitos' });
         }
@@ -44,356 +67,333 @@ const registerClient = async (req, res) => {
             return res.status(400).json({ error: 'RUC debe tener exactamente 11 dígitos' });
         }
         if (tipo_documento === 'CDE' && documento.length !== 9) {
-            return res.status(400).json({ error: 'Carnet de Extranjería debe tener exactamente 9 dígitos' });
+            return res.status(400).json({ error: 'CDE debe tener exactamente 9 dígitos' });
+        }
+        if (!/^\d$/.test(dv)) {
+            return res.status(400).json({ error: 'Dígito verificador debe ser un solo dígito numérico' });
+        }
+        if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(nombres) || nombres.length < 2) {
+            return res.status(400).json({ error: 'Nombres inválidos (solo letras, mínimo 2 caracteres)' });
+        }
+        if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(ap_paterno) || ap_paterno.length < 2) {
+            return res.status(400).json({ error: 'Apellido paterno inválido' });
+        }
+        if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(ap_materno) || ap_materno.length < 2) {
+            return res.status(400).json({ error: 'Apellido materno inválido' });
         }
 
-        if (!/^\d+$/.test(documento)) {
-            return res.status(400).json({ error: 'El documento debe contener solo números' });
-        }
+        // ── Verificar existencia ──
+        const existing = await Client.findOne({ where: { documento } });
 
-        const existingClient = await Client.findOne({ where: { document: documento } });
-
-        if (existingClient) {
-            if (existingClient.allow === 1) {
+        if (existing) {
+            if (existing.estado === true) {
                 return res.status(400).json({
-                    error: 'Usted ya ha registrado y validado anteriormente!',
-                    code: 'ALREADY_VALIDATED'
+                    error: 'Usted ya se ha registrado y validado anteriormente.',
+                    code: 'ALREADY_REGISTERED'
                 });
             }
+            // Estado FALSE → registro en proceso, permitir continuar
             return res.status(200).json({
-                message: 'Usted ya tiene un registro en proceso. Continuando...',
-                data: { id: existingClient.id }
+                message: 'Registro en proceso. Continuando...',
+                data: { id: existing.id }
             });
         }
 
+        // ── Crear cliente ──
         const client = await Client.create({
-            document: documento,
-            typeof: tipo_documento,
-            digit_very: digito_verificador,
-            names: nombres,
-            lastname_paternal: apellido_paterno,
-            lastname_maternal: apellido_materno,
-            allow: 2
+            tipo_doc: tipo_documento,
+            documento,
+            dv,
+            nombres,
+            ap_paterno,
+            ap_materno
         });
 
         console.log(`[API] Cliente registrado: ${documento} (${tipo_documento})`);
 
+        // Webhook: Registro Inicial
+        sendWebhook('client.registered', {
+            id: client.id,
+            documento: client.documento,
+            nombres: client.nombres,
+            fecha: client.created_at
+        });
+
         return res.status(201).json({
-            message: 'Cliente registrado correctamente, proceda a validar su número de celular',
+            message: 'Cliente registrado correctamente',
             data: { id: client.id }
         });
 
     } catch (error) {
-        console.error('Error en registerClient:', error);
+        console.error('[ERROR] registerClient:', error);
         return res.status(500).json({ error: 'Error interno del servidor' });
     }
 };
 
-/**
- * Genera un token, lo guarda y registra el intento de verificación.
- */
+// ════════════════════════════════════════════════════
+// PASO 2: SOLICITAR TOKEN (SMS o WhatsApp)
+// ════════════════════════════════════════════════════
 const requestToken = async (req, res) => {
     const { id } = req.params;
-    let { telefono, operador, via } = req.body;
+    let { celular, operador, via } = req.body;
 
-    // Validación de formato UUID para evitar errores de base de datos (500)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(id)) {
-        return res.status(400).json({ error: 'Formato de ID de cliente inválido' });
+    if (!UUID_REGEX.test(id)) {
+        return res.status(400).json({ error: 'ID de cliente inválido' });
     }
 
     try {
         const client = await Client.findByPk(id);
-        if (!client) {
-            return res.status(404).json({ error: 'Usuario no encontrado al momento de solicitar token' });
+        if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+        if (client.estado === true) {
+            return res.status(400).json({ error: 'Ya se registró anteriormente.', code: 'ALREADY_REGISTERED' });
         }
 
-        // BLOQUEO SEGURIDAD: Si ya está VALIDADO en auditoría, no permitir más tokens
-        const alreadyValidated = await ResultSend.findOne({
-            where: { id_client: id, provider_status: 'VALIDADO' }
-        });
-
-        if (alreadyValidated || client.allow === 1) {
-            return res.status(400).json({
-                error: 'Usted ya ha registrado y validado anteriormente!',
-                code: 'ALREADY_VALIDATED'
-            });
-        }
-
-        // Normalización y Validaciones estrictas Paso 2
-        telefono = String(telefono || '').trim();
+        // Normalización
+        celular = String(celular || '').trim();
         operador = String(operador || '').trim().toUpperCase();
-        via = String(via || '').trim().toUpperCase(); // Normalizar vía a mayúscula
+        via = String(via || '').trim().toUpperCase();
 
-        // Hardening: Solo 9 números exactos, prohibido letras
-        if (!/^\d{9}$/.test(telefono)) {
-            return res.status(400).json({ error: 'El teléfono debe tener exactamente 9 dígitos numéricos sin letras ni prefijos' });
+        if (!/^\d{9}$/.test(celular)) {
+            return res.status(400).json({ error: 'Celular debe tener exactamente 9 dígitos numéricos' });
         }
-
         if (!['MOVISTAR', 'BITEL', 'CLARO', 'ENTEL'].includes(operador)) {
-            return res.status(400).json({ error: 'Operador no válido (MOVISTAR, BITEL, CLARO, ENTEL)' });
+            return res.status(400).json({ error: 'Operador no válido' });
+        }
+        if (!['S', 'W'].includes(via)) {
+            return res.status(400).json({ error: 'Medio no válido (S=SMS, W=WhatsApp)' });
         }
 
-        if (via.length !== 1 || !['S', 'W'].includes(via)) {
-            return res.status(400).json({ error: 'Vía de envío no válida (solo S o W)' });
-        }
+        // ── COOLDOWN POR MEDIO ──
+        const resultado = await findOrCreateResult(id, via);
 
-        // Lógica de Cooldown Exponencial
-        const { Op } = require('sequelize');
-        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        if (resultado.intentos >= 3 && resultado.ultimo_intento) {
+            const waitSecs = getCooldownSeconds(resultado.intentos);
+            const deadline = new Date(new Date(resultado.ultimo_intento).getTime() + waitSecs * 1000);
+            const now = new Date();
 
-        const tokenCount = await Token.count({
-            where: {
-                id_client: id,
-                via: via,
-                created_at: { [Op.gte]: yesterday }
-            }
-        });
-
-        if (tokenCount > 0) {
-            const lastToken = await Token.findOne({
-                where: { id_client: id, via: via },
-                order: [['created_at', 'DESC']]
-            });
-
-            const diffMs = Date.now() - new Date(lastToken.createdAt);
-            const diffMin = diffMs / (1000 * 60);
-
-            let waitMin = 0;
-            switch (tokenCount + 1) {
-                case 2: waitMin = 2; break;
-                case 3: waitMin = 4; break;
-                case 4: waitMin = 30; break;
-                case 5: waitMin = 60; break;
-                case 6: waitMin = 240; break;
-                case 7: waitMin = 300; break;
-                case 8: waitMin = 480; break;
-                case 9: waitMin = 720; break;
-                default: waitMin = 1440;
-            }
-
-            if (diffMin < waitMin) {
-                const remainingMs = (waitMin * 60 * 1000) - diffMs;
-                const remMin = Math.floor(remainingMs / (1000 * 60));
-                const remSec = Math.ceil((remainingMs % (1000 * 60)) / 1000);
-
-                const timeText = remMin > 0 ? `${remMin} minuto(s) y ${remSec} segundos` : `${remSec} segundos`;
-
-                console.warn(`[SECURITY] Bloqueo de Cooldown: Cliente ${client.document} intentó pedir token via ${via}. Faltan ${timeText}.`);
-
+            if (now < deadline) {
+                const remaining = Math.ceil((deadline - now) / 1000);
                 return res.status(429).json({
-                    error: 'Tiempo de espera obligatorio',
-                    message: `Límite de intentos alcanzado. Debe esperar ${timeText}.`,
-                    remaining_seconds: Math.ceil(remainingMs / 1000),
-                    code: 'ERR_COOLDOWN_ACTIVE'
+                    error: 'Debe esperar antes de solicitar un nuevo token por este medio.',
+                    remaining_seconds: remaining,
+                    intentos: resultado.intentos,
+                    via_bloqueada: via,
+                    code: 'ERR_COOLDOWN'
                 });
             }
         }
 
-        await client.update({ cellphone: telefono, operator: operador });
+        // Actualizar datos del cliente
+        await client.update({ celular, operador });
 
-        const code = generateToken();
-        const expiresIn = 2.5 * 60 * 1000;
-        const expirationTime = new Date(Date.now() + expiresIn);
+        // Generar token
+        const codigo = generateToken();
+        const codigoHash = await hashToken(codigo);
+        const ip = getCleanIp(req);
 
         const tokenRecord = await Token.create({
-            id_client: client.id,
-            request: code,
-            via: via,
-            expiration_time: expirationTime,
-            status: 'P'
+            id_cliente: id,
+            codigo,
+            codigo_hash: codigoHash,
+            via,
+            status: 'P',
+            ip_solicitante: ip
         });
 
-        const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || req.ip;
-        const cleanIp = clientIp.includes('::ffff:') ? clientIp.split(':').pop() : clientIp;
+        // Enviar token al cliente
+        const mensaje = `Estimado ${client.nombres} su token es ${codigo}`;
+        console.log(`[TOKEN] ${via === 'S' ? 'SMS' : 'WhatsApp'} → ${celular}: ${mensaje} [IP: ${ip}]`);
 
-        await ResultSend.create({
-            id_client: client.id,
-            id_token: tokenRecord.id,
-            ip: cleanIp,
-            via: via,
-            provider_status: 'PROCESO',
-            raw_log: { message: `Simulación de envío vía ${via}` }
-        });
-
-        console.log(`[SIMULACIÓN] Token para ${telefono}: ${code} vía ${via} [IP: ${cleanIp}]`);
+        let envioResult = { success: false };
+        if (via === 'S') {
+            envioResult = await sendSMS(celular, mensaje);
+            if (!envioResult.success) {
+                console.warn(`[SMS] Fallo envío a ${celular}:`, envioResult.error);
+            }
+        } else {
+            const waStatus = getWAStatus();
+            if (waStatus.status !== 'connected') {
+                return res.status(503).json({
+                    error: 'WhatsApp no está conectado. El administrador debe escanear el QR primero.',
+                    code: 'ERR_WA_DISCONNECTED'
+                });
+            }
+            envioResult = await sendWhatsApp(celular, mensaje);
+            if (!envioResult.success) {
+                console.warn(`[WA] Fallo envío a ${celular}:`, envioResult.error);
+            }
+        }
 
         return res.status(200).json({
-            message: `Token generado y enviado vía ${via}`,
+            message: `Token enviado vía ${via === 'S' ? 'SMS' : 'WhatsApp'}`,
             data: {
                 token_id: tokenRecord.id,
-                expires_in_seconds: 150
+                expires_in_seconds: 150,
+                via,
+                intentos: resultado.intentos,
+                token_length: parseInt(process.env.TOKEN_LENGTH) || 4
             }
         });
 
     } catch (error) {
-        console.error('Error en requestToken:', error);
+        console.error('[ERROR] requestToken:', error);
         return res.status(500).json({ error: 'Error interno del servidor' });
     }
 };
 
-/**
- * Verifica el token ingresado por el usuario.
- */
+// ════════════════════════════════════════════════════
+// PASO 3: VERIFICAR TOKEN
+// ════════════════════════════════════════════════════
 const verifyToken = async (req, res) => {
     const { id, token } = req.params;
 
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(id)) {
-        return res.status(400).json({ error: 'Formato de ID de cliente inválido' });
+    if (!UUID_REGEX.test(id)) {
+        return res.status(400).json({ error: 'ID de cliente inválido' });
     }
 
     try {
         const client = await Client.findByPk(id);
-        if (!client) {
-            return res.status(404).json({ error: 'Usuario no encontrado al momento de validar token' });
+        if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+        if (client.estado === true) {
+            return res.status(400).json({ error: 'Ya validado anteriormente.', code: 'ALREADY_REGISTERED' });
         }
 
-        if (client.allow === 1) {
-            return res.status(400).json({ error: 'Usted ya ha registrado y validado anteriormente!', code: 'ALREADY_VALIDATED' });
-        }
-
-        // Buscar el token más reciente
-        let tokenRecord = await Token.findOne({
-            where: { id_client: client.id },
+        // Token pendiente más reciente
+        const tokenRecord = await Token.findOne({
+            where: { id_cliente: id, status: 'P' },
             order: [['created_at', 'DESC']]
         });
 
-        if (!tokenRecord || (tokenRecord.status !== 'P' && tokenRecord.status !== 'X')) {
-            return res.status(404).json({ error: 'No se encontró un token pendiente. Solicite uno nuevo.', code: 'ERR_NO_PENDING_TOKEN' });
+        if (!tokenRecord) {
+            return res.status(404).json({ error: 'No hay token pendiente. Solicite uno nuevo.', code: 'ERR_NO_TOKEN' });
         }
 
-        // VALIDACIÓN DE IP (PINNING)
-        const auditLog = await ResultSend.findOne({
-            where: { id_token: tokenRecord.id }
-        });
+        // Obtener resultado por medio
+        const resultado = await findOrCreateResult(id, tokenRecord.via);
 
-        const currentIp = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || req.ip;
-        const cleanCurrentIp = currentIp.includes('::ffff:') ? currentIp.split(':').pop() : currentIp;
+        // COOLDOWN CHECK
+        if (resultado.intentos >= 3 && resultado.ultimo_intento) {
+            const waitSecs = getCooldownSeconds(resultado.intentos);
+            const deadline = new Date(new Date(resultado.ultimo_intento).getTime() + waitSecs * 1000);
+            if (new Date() < deadline) {
+                const remaining = Math.ceil((deadline - new Date()) / 1000);
+                return res.status(429).json({
+                    error: 'Debe esperar el cooldown.',
+                    remaining_seconds: remaining,
+                    intentos: resultado.intentos,
+                    via_bloqueada: tokenRecord.via,
+                    code: 'ERR_COOLDOWN'
+                });
+            }
+        }
 
-        if (auditLog && auditLog.ip !== cleanCurrentIp) {
-            console.error(`[SECURITY] Alerta de IP: Token solicitado desde ${auditLog.ip}, intento de validación desde ${cleanCurrentIp}`);
+        // IP PINNING
+        const currentIp = getCleanIp(req);
+        if (tokenRecord.ip_solicitante && tokenRecord.ip_solicitante !== currentIp) {
             return res.status(403).json({
-                error: 'Seguridad de Sesión: La IP de validación no coincide con la solicitud original.',
+                error: 'IP no coincide con la solicitud original.',
                 code: 'ERR_IP_MISMATCH'
             });
         }
 
-        // Si ya está bloqueado (X), seguimos aumentando el contador si siguen intentando
-        if (tokenRecord.status === 'X') {
-            const newAttempts = tokenRecord.attempts_failed + 1;
-            await tokenRecord.update({ attempts_failed: newAttempts });
-            console.warn(`[SECURITY] Re-intento sobre token bloqueado para ${client.document}. Total fallos: ${newAttempts}`);
+        // ── Comparar token ──
+        if (tokenRecord.codigo !== token) {
+            const newIntentos = (resultado.intentos || 0) + 1;
+            await resultado.update({
+                intentos: newIntentos,
+                ultimo_intento: new Date(),
+                bloqueado: newIntentos >= 3
+            });
+
+            console.warn(`[SECURITY] Token incorrecto #${newIntentos} para ${client.documento} vía ${tokenRecord.via}`);
+
             return res.status(400).json({
-                error: 'Máximo de intentos alcanzado. Este código ha sido invalidado.',
-                code: 'ERR_MAX_ATTEMPTS'
+                error: 'Token incorrecto.',
+                code: 'ERR_TOKEN_INCORRECTO',
+                intentos: newIntentos,
+                bloqueado: newIntentos >= 3,
+                via_bloqueada: tokenRecord.via
             });
         }
 
-        // Verificar si el token coincide
-        if (tokenRecord.request !== token) {
-            const newAttempts = tokenRecord.attempts_failed + 1;
+        // ── TOKEN CORRECTO ──
+        await tokenRecord.update({ status: 'V' });
+        await resultado.update({ bloqueado: false });
 
-            if (newAttempts >= 5) {
-                await tokenRecord.update({ status: 'X', attempts_failed: newAttempts });
-                console.error(`[SECURITY] Máximo de intentos (5) alcanzado para cliente ${client.document}. Token invalidado.`);
-                return res.status(400).json({
-                    error: 'Máximo de intentos alcanzado. Este código ha sido invalidado.',
-                    code: 'ERR_MAX_ATTEMPTS'
-                });
-            } else {
-                await tokenRecord.update({ attempts_failed: newAttempts });
-                console.warn(`[SECURITY] Intento fallido ${newAttempts}/5 para cliente ${client.document}`);
-                return res.status(400).json({
-                    error: `Token incorrecto. Intento ${newAttempts} de 5.`,
-                    code: 'ERR_INVALID_TOKEN',
-                    remaining_attempts: 5 - newAttempts
-                });
-            }
-        }
+        console.log(`[API] Token verificado exitosamente para ${client.documento}`);
 
-        // Verificar expiración
-        if (new Date() > new Date(tokenRecord.expiration_time)) {
-            await tokenRecord.update({ status: 'E' }); // EXPIRADO
-            console.warn(`[SECURITY] Token expirado para cliente ${client.document}`);
-            return res.status(400).json({ error: 'El token ha expirado. Solicite uno nuevo.', code: 'ERR_TOKEN_EXPIRED' });
-        }
-
-        // Calcular tiempo transcurrido
-        const timeLapsed = Math.floor((Date.now() - new Date(tokenRecord.createdAt)) / 1000) || 0;
-
-        // Validar token
-        await tokenRecord.update({
-            status: 'V',
-            time_lapsed: timeLapsed
+        // Webhook: Celular Validado
+        sendWebhook('client.validated', {
+            id: client.id,
+            celular: client.celular,
+            via: tokenRecord.via,
+            fecha_validacion: new Date()
         });
 
-        // Validar cliente
-        await client.update({ allow: 1 });
-
-        // Actualizar auditoría
-        await ResultSend.update(
-            {
-                provider_status: 'VALIDADO',
-                attempts_correct: 1,
-                attempts_failed: tokenRecord.attempts_failed
-            },
-            { where: { id_token: tokenRecord.id } }
-        );
-
-        console.log(`[API] Token verificado con éxito para ${client.document}`);
-
         return res.status(200).json({
-            message: 'Token verificado exitosamente. Registro completado.',
+            message: 'Token verificado exitosamente.',
             data: { status: 'VALIDADO' }
         });
 
     } catch (error) {
-        console.error(`[ERROR API] verifyToken (${id}):`, error);
+        console.error('[ERROR] verifyToken:', error);
         return res.status(500).json({ error: 'Error interno al verificar token' });
     }
 };
 
-/**
- * Finaliza el registro del cliente (Paso 4).
- * Actualiza correo, ubicación y acepta términos.
- */
+// ════════════════════════════════════════════════════
+// PASO 4: FINALIZAR REGISTRO
+// ════════════════════════════════════════════════════
 const finalizeRegistration = async (req, res) => {
     const { id } = req.params;
-    const { correo, departamento, provincia, distrito, accept } = req.body;
+    const { correo, departamento, provincia, distrito, acepto_terminos } = req.body;
 
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(id)) {
-        return res.status(400).json({ error: 'Formato de ID de cliente inválido' });
+    if (!UUID_REGEX.test(id)) {
+        return res.status(400).json({ error: 'ID de cliente inválido' });
     }
 
     try {
         const client = await Client.findByPk(id);
-        if (!client) {
-            return res.status(404).json({ error: 'Cliente no encontrado' });
+        if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+        // Debe haber un token validado
+        const tokenValidado = await Token.findOne({
+            where: { id_cliente: id, status: 'V' }
+        });
+        if (!tokenValidado) {
+            return res.status(400).json({ error: 'Debe verificar su celular primero' });
         }
 
-        if (client.allow !== 1) {
-            return res.status(400).json({ error: 'Debe validar su celular primero' });
-        }
-
-        if (!accept) {
+        if (!acepto_terminos) {
             return res.status(400).json({ error: 'Debe aceptar los términos y condiciones' });
         }
-
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) {
             return res.status(400).json({ error: 'Correo electrónico inválido' });
+        }
+        if (!departamento || !provincia || !distrito) {
+            return res.status(400).json({ error: 'Debe completar su ubicación' });
         }
 
         await client.update({
             email: correo,
-            dept: departamento,
-            prov: provincia,
-            distr: distrito,
-            accept: true
+            departamento,
+            provincia,
+            distrito,
+            acepto_terminos: true,
+            estado: true  // ← ESTADO = TRUE = Registro completo
         });
 
-        console.log(`[API] Registro finalizado para cliente ${id}`);
+        console.log(`[API] Registro finalizado para ${client.documento}`);
+
+        // Webhook: Registro Completado
+        sendWebhook('client.completed', {
+            id: client.id,
+            correo: client.email,
+            ubicacion: `${client.departamento}, ${client.provincia}, ${client.distrito}`,
+            estado_final: 'COMPLETADO'
+        });
 
         return res.status(200).json({
             message: 'Registro completado exitosamente',
@@ -401,150 +401,118 @@ const finalizeRegistration = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error en finalizeRegistration:', error);
+        console.error('[ERROR] finalizeRegistration:', error);
         return res.status(500).json({ error: 'Error interno del servidor' });
     }
 };
 
-/**
- * Cancela el token actual por voluntad del usuario.
- * Cuenta como un intento fallido para el cooldown de 24h.
- */
+// ════════════════════════════════════════════════════
+// CANCELAR TOKEN (desde modal)
+// ════════════════════════════════════════════════════
 const cancelToken = async (req, res) => {
     const { id } = req.params;
-
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(id)) {
-        return res.status(400).json({ error: 'Formato de ID de cliente inválido' });
-    }
-
-    try {
-        const client = await Client.findByPk(id);
-        if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
-
-        const tokenRecord = await Token.findOne({
-            where: { id_client: id, status: 'P' },
-            order: [['created_at', 'DESC']]
-        });
-
-        if (tokenRecord) {
-            const newAttempts = (tokenRecord.attempts_failed || 0) + 1;
-            await tokenRecord.update({ status: 'X', attempts_failed: newAttempts }); // CANCELADO
-
-            await ResultSend.update(
-                { provider_status: 'CANCELADO_USUARIO', attempts_failed: newAttempts },
-                { where: { id_token: tokenRecord.id } }
-            );
-
-            console.log(`[API] Token cancelado manualmente por ${client.document}. Intento ${newAttempts} registrado.`);
-            return res.status(200).json({ message: 'Token cancelado correctamente (intento fallido contado)' });
-        }
-
-        return res.status(404).json({ error: 'No hay token pendiente para cancelar' });
-    } catch (error) {
-        console.error(`[ERROR API] cancelToken (${id}):`, error);
-        return res.status(500).json({ error: 'Error interno al cancelar token' });
-    }
-};
-
-/**
- * Registra que un token expiró sin respuesta del usuario.
- */
-const expireToken = async (req, res) => {
-    const { id } = req.params;
-
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(id)) {
-        return res.status(400).json({ error: 'Formato de ID de cliente inválido' });
-    }
+    if (!UUID_REGEX.test(id)) return res.status(400).json({ error: 'ID inválido' });
 
     try {
         const tokenRecord = await Token.findOne({
-            where: { id_client: id, status: 'P' },
+            where: { id_cliente: id, status: 'P' },
             order: [['created_at', 'DESC']]
         });
 
-        if (tokenRecord) {
-            await tokenRecord.update({ status: 'E' }); // EXPIRADO
-            await ResultSend.update(
-                { provider_status: 'SIN_RESPUESTA', attempts_no_response: 1 },
-                { where: { id_token: tokenRecord.id } }
-            );
-            console.log(`[API] Token expirado por sistema (sin respuesta)`);
+        if (!tokenRecord) {
+            return res.status(404).json({ error: 'No hay token pendiente' });
         }
 
-        return res.status(200).json({ message: 'Token marcado como sin respuesta' });
+        await tokenRecord.update({ status: 'X' });
+
+        const resultado = await findOrCreateResult(id, tokenRecord.via);
+        const newIntentos = (resultado.intentos || 0) + 1;
+        await resultado.update({
+            intentos: newIntentos,
+            ultimo_intento: new Date(),
+            bloqueado: newIntentos >= 3
+        });
+
+        console.log(`[API] Token cancelado. Intento #${newIntentos} vía ${tokenRecord.via}`);
+        return res.status(200).json({
+            message: 'Token cancelado',
+            intentos: newIntentos,
+            via_bloqueada: tokenRecord.via
+        });
     } catch (error) {
-        console.error('Error en expireToken:', error);
+        console.error('[ERROR] cancelToken:', error);
         return res.status(500).json({ error: 'Error interno' });
     }
 };
 
-/**
- * Consulta el estado de cooldown de un cliente para un medio específico.
- */
-const getCooldownStatus = async (req, res) => {
-    const { id, via } = req.params;
-
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(id)) {
-        return res.status(400).json({ error: 'Formato de ID de cliente inválido' });
-    }
+// ════════════════════════════════════════════════════
+// EXPIRAR TOKEN (sin respuesta)
+// ════════════════════════════════════════════════════
+const expireToken = async (req, res) => {
+    const { id } = req.params;
+    if (!UUID_REGEX.test(id)) return res.status(400).json({ error: 'ID inválido' });
 
     try {
-        const { Op } = require('sequelize');
-        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-        const tokenCount = await Token.count({
-            where: {
-                id_client: id,
-                via: via,
-                created_at: { [Op.gte]: yesterday }
-            }
+        const tokenRecord = await Token.findOne({
+            where: { id_cliente: id, status: 'P' },
+            order: [['created_at', 'DESC']]
         });
 
-        let waitMin = 0;
-        let lastTokenCreatedAt = null;
-        let diffMs = 0;
+        if (tokenRecord) {
+            await tokenRecord.update({ status: 'E' });
 
-        if (tokenCount > 0) {
-            const lastToken = await Token.findOne({
-                where: { id_client: id, via: via },
-                order: [['created_at', 'DESC']]
+            const resultado = await findOrCreateResult(id, tokenRecord.via);
+            const newIntentos = (resultado.intentos || 0) + 1;
+            await resultado.update({
+                intentos: newIntentos,
+                ultimo_intento: new Date(),
+                bloqueado: newIntentos >= 3
             });
-            lastTokenCreatedAt = lastToken.createdAt;
-            diffMs = Date.now() - new Date(lastTokenCreatedAt);
+        }
 
-            switch (tokenCount + 1) {
-                case 2: waitMin = 2; break;
-                case 3: waitMin = 4; break;
-                case 4: waitMin = 30; break;
-                case 5: waitMin = 60; break;
-                case 6: waitMin = 240; break;
-                case 7: waitMin = 300; break;
-                case 8: waitMin = 480; break;
-                case 9: waitMin = 720; break;
-                default: waitMin = 1440;
+        return res.status(200).json({ message: 'Token expirado registrado' });
+    } catch (error) {
+        console.error('[ERROR] expireToken:', error);
+        return res.status(500).json({ error: 'Error interno' });
+    }
+};
+
+// ════════════════════════════════════════════════════
+// ESTADO DE COOLDOWN (ambos medios)
+// ════════════════════════════════════════════════════
+const getCooldownStatus = async (req, res) => {
+    const { id } = req.params;
+    if (!UUID_REGEX.test(id)) return res.status(400).json({ error: 'ID inválido' });
+
+    try {
+        const data = {};
+
+        for (const medio of ['S', 'W']) {
+            const r = await ResultSend.findOne({ where: { id_cliente: id, via: medio } });
+
+            if (r && r.intentos >= 3 && r.ultimo_intento) {
+                const wait = getCooldownSeconds(r.intentos);
+                const deadline = new Date(new Date(r.ultimo_intento).getTime() + wait * 1000);
+                const remaining = Math.max(0, Math.ceil((deadline - new Date()) / 1000));
+
+                data[medio] = {
+                    intentos: r.intentos,
+                    bloqueado: remaining > 0,
+                    remaining_seconds: remaining
+                };
+            } else {
+                data[medio] = {
+                    intentos: r ? r.intentos : 0,
+                    bloqueado: false,
+                    remaining_seconds: 0
+                };
             }
         }
 
-        const waitMs = waitMin * 60 * 1000;
-        const remainingMs = Math.max(0, waitMs - diffMs);
-        const remainingSec = Math.ceil(remainingMs / 1000);
-
-        return res.status(200).json({
-            data: {
-                via,
-                intentos_realizados_24h: tokenCount,
-                siguiente_intento_numero: tokenCount + 1,
-                tiempo_espera_total_min: waitMin,
-                segundos_restantes: remainingSec,
-                puede_solicitar: remainingSec === 0
-            }
-        });
+        return res.status(200).json({ data });
     } catch (error) {
-        console.error('Error en getCooldownStatus:', error);
-        return res.status(500).json({ error: 'Error al consultar estado de cooldown' });
+        console.error('[ERROR] getCooldownStatus:', error);
+        return res.status(500).json({ error: 'Error interno' });
     }
 };
 

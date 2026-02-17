@@ -2,7 +2,7 @@ const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 const Role = require('./Role');
 
-const User = sequelize.define('USUARIOS', {
+const User = sequelize.define('usuario', {
     id: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
@@ -24,23 +24,27 @@ const User = sequelize.define('USUARIOS', {
     },
     rol_id: {
         type: DataTypes.INTEGER,
-        references: {
-            model: Role,
-            key: 'id'
-        }
+        references: { model: Role, key: 'id' }
     },
-    mfa_secret: {
-        type: DataTypes.STRING(255)
+    can_view_stats: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    can_view_tokens: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    photo: {
+        type: DataTypes.STRING(500),
+        allowNull: true,
+        defaultValue: null
     },
     status: {
         type: DataTypes.BOOLEAN,
         defaultValue: true
     }
-}, {
-    tableName: 'USUARIOS'
-});
+}, { tableName: 'usuario' });
 
-// Relaciones
 Role.hasMany(User, { foreignKey: 'rol_id' });
 User.belongsTo(Role, { foreignKey: 'rol_id' });
 

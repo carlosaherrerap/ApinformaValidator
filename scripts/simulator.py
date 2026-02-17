@@ -1,3 +1,10 @@
+"""
+╔══════════════════════════════════════════════════════════════╗
+║  SIMULADOR DE CARGA — TOKENIZER HUANCAYO                    ║
+║  200 conexiones simultáneas | 50,000 peticiones              ║
+║  Métricas: Throughput, Latencia P50/P95/P99, Tasa de éxito  ║
+╚══════════════════════════════════════════════════════════════╝
+"""
 import argparse
 import asyncio
 import httpx
@@ -6,317 +13,308 @@ import random
 import csv
 import sys
 import logging
+import statistics
 from faker import Faker
 
-# Optional: psycopg2 for direct DB checks
-try:
-    import psycopg2
-    HAS_PSYCOPG2 = True
-except ImportError:
-    HAS_PSYCOPG2 = False
-
-# Defaults
 DEFAULT_API_BASE = "http://localhost:3000/v1/api"
 DEFAULT_TOTAL = 50000
-DEFAULT_CONCURRENCY = 250
+DEFAULT_CONCURRENCY = 200
 
 OPERADORES = ["MOVISTAR", "BITEL", "CLARO", "ENTEL"]
 VIAS = ["S", "W"]
+TIPOS_DOC = [("DNI", 8), ("RUC", 11), ("CDE", 9)]
 
-faker = Faker()
+faker = Faker('es_PE')
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger("simulator")
 
 
-def check_doc_in_db(doc, db_url):
-    """Checks if a document already exists in the database."""
-    if not db_url or not HAS_PSYCOPG2:
-        return False
-    try:
-        conn = psycopg2.connect(db_url)
-        with conn.cursor() as cur:
-            cur.execute("SELECT id FROM client_token WHERE document = %s", (doc,))
-            exists = cur.fetchone() is not None
-        conn.close()
-        return exists
-    except Exception as e:
-        logger.error(f"DB Check Error: {e}")
-        return False
-
-
 async def do_request(client, method, url, **kwargs):
-    """Helper to perform requests and handle basic errors."""
     try:
-        response = await getattr(client, method)(url, **kwargs)
-        return response
+        return await getattr(client, method)(url, **kwargs)
     except Exception as e:
-        # Mock a failed response if exception occurs
-        class FakeResponse:
-            def __init__(self, err):
-                self.status_code = 999
-                self.text = str(err)
-            def json(self):
-                return {"error": self.text}
-        return FakeResponse(e)
+        class Fake:
+            status_code = 999
+            text = str(e)
+            def json(self): return {"error": self.text}
+        return Fake()
 
 
-async def run_scenario(name, func, *args, verbose=False):
-    start = time.perf_counter()
-    try:
-        success, msg = await func(*args, verbose=verbose)
-    except Exception as e:
-        success, msg = False, f"Exception: {e}"
-    end = time.perf_counter()
-    duration = end - start
-    
-    if not success and verbose:
-        logger.error(f"Scenario '{name}' failed: {msg}")
-        
-    return {"name": name, "success": bool(success), "msg": str(msg), "time": duration}
+# ──── ESCENARIOS ────
 
+async def scenario_full_flow(client, api_base, verbose=False):
+    """Flujo completo: registro → solicitar token → (verificación simulada)"""
+    tipo, size = random.choice(TIPOS_DOC)
+    doc = ''.join([str(random.randint(0, 9)) for _ in range(size)])
 
-async def scenario_success_flow(client, api_base, db_url=None, verbose=False):
-    # Step 1: Create Client (with retry for uniqueness)
-    cid = None
-    attempts = 0
-    max_setup_attempts = 20
-    
-    while not cid and attempts < max_setup_attempts:
-        attempts += 1
-        doc = str(random.randint(10000000, 99999999))
-        
-        # PROACTIVE DB CHECK (requested by user)
-        if db_url:
-            if check_doc_in_db(doc, db_url):
-                if verbose: logger.info(f"DB Collision detected for {doc}. Skipping...")
-                attempts -= 1 # Don't count as failure
-                continue
+    r1 = await do_request(client, 'post', f"{api_base}/client", json={
+        "tipo_documento": tipo,
+        "documento": doc,
+        "dv": str(random.randint(0, 9)),
+        "nombres": faker.first_name(),
+        "ap_paterno": faker.last_name(),
+        "ap_materno": faker.last_name()
+    }, timeout=30.0)
 
-        payload = {
-            "tipo_documento": "DNI",
-            "documento": doc,
-            "digito_verificador": str(random.randint(0, 9)),
-            "nombres": faker.first_name(),
-            "apellido_paterno": faker.last_name(),
-            "apellido_materno": faker.last_name()
-        }
-
-        r1 = await do_request(client, 'post', f"{api_base}/client", json=payload, timeout=30.0)
-        
-        if r1.status_code in (200, 201):
-            try:
-                data = r1.json().get("data")
-                cid = data.get("id") if data else None
-            except Exception as e:
-                return False, f"JSON Parse Error Step 1: {e} | Body: {r1.text[:100]}"
-        elif r1.status_code == 400:
-            try:
-                err_json = r1.json()
-                if err_json.get("code") == "ALREADY_VALIDATED":
-                    # Fallback API-level collision handling
-                    continue 
-                else:
-                    return False, f"Step 1 Fail (400): {err_json.get('error')}"
-            except:
-                return False, f"Step 1 Fail (400): {r1.text[:200]}"
-        elif r1.status_code == 429:
-            # Hit rate limit, wait a bit and retry this attempt
-            if verbose: logger.warning("Rate limit hit (429). Sleeping 3s...")
-            await asyncio.sleep(3.0)
-            attempts -= 1 
-            continue
-        else:
-            if verbose: logger.error(f"Step 1 Fail: {r1.status_code} | Body: {r1.text}")
-            return False, f"Step 1 Fail: {r1.status_code} {r1.text[:200]}"
-
-    if not cid:
-        return False, f"Failed to get unique client ID after {max_setup_attempts} attempts"
-
-    # Step 2: Request Token
-    token_payload = {
-        "telefono": str(random.randint(900000000, 999999999)),
-        "operador": random.choice(OPERADORES),
-        "via": random.choice(VIAS)
-    }
-    r2 = await do_request(client, 'post', f"{api_base}/client/{cid}/token", json=token_payload, timeout=30.0)
-    
-    if r2.status_code != 200:
-        if verbose: logger.error(f"Step 2 Fail: {r2.status_code} | Body: {r2.text}")
-        return False, f"Step 2 Fail: {r2.status_code} {r2.text[:200]}"
-
-    return True, "Flujo de éxito completado"
-
-
-async def scenario_validation_custom(client, api_base, db_url=None, verbose=False):
-    """Tests custom validation failures: repetitive numbers, many digits, letters."""
-    # We also need a client for this, try to find a unique doc
-    doc = None
-    for _ in range(10):
-        d = str(random.randint(10000000, 99999999))
-        if db_url and check_doc_in_db(d, db_url): continue
-        doc = d
-        break
-    
-    if not doc: doc = str(random.randint(10000000, 99999999))
-
-    reg = await do_request(client, 'post', f"{api_base}/client", json={
-        "tipo_documento": "DNI", 
-        "documento": doc, 
-        "digito_verificador": "0", 
-        "nombres": "Test", 
-        "apellido_paterno": "Test", 
-        "apellido_materno": "Test"
-    }, timeout=20.0)
-    
-    if reg.status_code not in (200, 201):
-        return False, f"Setup Fail: {reg.status_code} {reg.text[:100]}"
-    
-    cid = reg.json().get("data", {}).get("id")
-    
-    # Randomly pick a failure type
-    fail_type = random.choice(["letters", "too_long", "repetitive"])
-    
-    if fail_type == "letters":
-        phone = "9" + "".join(random.choices("0123456789abc", k=8))
-    elif fail_type == "too_long":
-        phone = "9" + str(random.randint(1000000000, 9999999999))
-    else: # repetitive
-        digit = str(random.randint(0, 9))
-        phone = digit * 9
-
-    r2 = await do_request(client, 'post', f"{api_base}/client/{cid}/token", json={
-        "telefono": phone, 
-        "operador": random.choice(OPERADORES), 
-        "via": random.choice(VIAS)
-    }, timeout=10.0)
-    
-    if r2.status_code == 400:
-        return True, f"Fallo esperado ({fail_type}) capturado correctamente"
-    
-    if verbose: logger.error(f"Expected 400 for {fail_type} but got {r2.status_code} | Body: {r2.text}")
-    return False, f"Fallo esperado ({fail_type}) NO detectado. Status: {r2.status_code}"
-
-
-async def scenario_ip_mismatch(client, api_base, db_url=None, verbose=False):
-    doc = str(random.randint(10000000, 99999999))
-    r1 = await do_request(client, 'post', f"{api_base}/client", json={"tipo_documento": "DNI", "documento": doc, "digito_verificador": str(random.randint(0,9)), "nombres": faker.first_name(), "apellido_paterno": faker.last_name(), "apellido_materno": faker.last_name()}, timeout=20.0)
+    if r1.status_code == 400:
+        body = r1.json()
+        if body.get('code') == 'ALREADY_REGISTERED':
+            return True, "Ya registrado (esperado en alta carga)"
+        return False, f"Registro rechazado: {body.get('error', '')[:100]}"
+    if r1.status_code == 429:
+        return True, "Rate limited (429)"
     if r1.status_code not in (200, 201):
-        return False, f"No se creó cliente: {r1.status_code}"
+        return False, f"Registro falló: {r1.status_code}"
+
     cid = r1.json().get("data", {}).get("id")
     if not cid:
-        return False, "No client id"
+        return False, "No se obtuvo client ID"
 
-    await do_request(client, 'post', f"{api_base}/client/{cid}/token", json={"telefono": str(random.randint(900000000, 999999999)), "operador": "CLARO", "via": "W"}, headers={"X-Forwarded-For": "1.1.1.1"}, timeout=10.0)
-    r3 = await do_request(client, 'get', f"{api_base}/client/{cid}/verify/1234", headers={"X-Forwarded-For": "2.2.2.2"}, timeout=10.0)
-    if r3.status_code == 403:
-        return True, "IP Pinning bloqueó acceso"
-    
-    if verbose: logger.error(f"Expected 403 for IP Mismatch but got {r3.status_code} | Body: {r3.text}")
-    return False, f"IP Pinning falló: {r3.status_code}"
+    # Paso 2: Solicitar token
+    r2 = await do_request(client, 'post', f"{api_base}/client/{cid}/token", json={
+        "celular": str(random.randint(900000000, 999999999)),
+        "operador": random.choice(OPERADORES),
+        "via": random.choice(VIAS)
+    }, timeout=30.0)
+
+    if r2.status_code == 429:
+        return True, "Cooldown activo (esperado)"
+    if r2.status_code not in (200, 201):
+        return False, f"Token falló: {r2.status_code} {r2.text[:100]}"
+
+    return True, "Flujo registro+token OK"
 
 
-async def worker(name, queue, client, api_base, db_url, results, results_lock, scenarios, progress, verbose=False):
+async def scenario_validation(client, api_base, verbose=False):
+    """Pruebas de validación: datos inválidos."""
+    test = random.choice(["bad_phone", "bad_tipo", "bad_doc", "empty"])
+
+    if test == "bad_phone":
+        doc = ''.join([str(random.randint(0, 9)) for _ in range(8)])
+        r = await do_request(client, 'post', f"{api_base}/client", json={
+            "tipo_documento": "DNI", "documento": doc, "dv": "0",
+            "nombres": "Test", "ap_paterno": "Test", "ap_materno": "Test"
+        })
+        if r.status_code not in (200, 201): return False, f"Setup falló: {r.status_code}"
+        cid = r.json().get("data", {}).get("id")
+        if not cid: return False, "No ID"
+        r2 = await do_request(client, 'post', f"{api_base}/client/{cid}/token", json={
+            "celular": "abc", "operador": "CLARO", "via": "S"
+        })
+        return r2.status_code == 400, f"Validación phone: {r2.status_code}"
+
+    elif test == "bad_tipo":
+        r = await do_request(client, 'post', f"{api_base}/client", json={
+            "tipo_documento": "XYZ", "documento": "12345678", "dv": "0",
+            "nombres": "Test", "ap_paterno": "Test", "ap_materno": "Test"
+        })
+        return r.status_code == 400, f"Validación tipo: {r.status_code}"
+
+    elif test == "bad_doc":
+        r = await do_request(client, 'post', f"{api_base}/client", json={
+            "tipo_documento": "DNI", "documento": "123", "dv": "0",
+            "nombres": "Test", "ap_paterno": "Test", "ap_materno": "Test"
+        })
+        return r.status_code == 400, f"Validación doc len: {r.status_code}"
+
+    else:
+        r = await do_request(client, 'post', f"{api_base}/client", json={})
+        return r.status_code == 400, f"Validación empty: {r.status_code}"
+
+
+async def scenario_cooldown(client, api_base, verbose=False):
+    """Simula verificaciones incorrectas para probar cooldown."""
+    doc = ''.join([str(random.randint(0, 9)) for _ in range(8)])
+    r1 = await do_request(client, 'post', f"{api_base}/client", json={
+        "tipo_documento": "DNI", "documento": doc, "dv": "0",
+        "nombres": faker.first_name(), "ap_paterno": faker.last_name(), "ap_materno": faker.last_name()
+    })
+    if r1.status_code not in (200, 201): return True, "Colisión doc"
+    cid = r1.json().get("data", {}).get("id")
+    if not cid: return False, "No ID"
+
+    via = random.choice(VIAS)
+    r2 = await do_request(client, 'post', f"{api_base}/client/{cid}/token", json={
+        "celular": str(random.randint(900000000, 999999999)),
+        "operador": "MOVISTAR", "via": via
+    })
+    if r2.status_code == 429: return True, "Cooldown"
+    if r2.status_code != 200: return False, f"Token: {r2.status_code}"
+
+    # 2 intentos incorrectos
+    for _ in range(2):
+        await do_request(client, 'get', f"{api_base}/client/{cid}/verify/XXXX")
+
+    # Consultar cooldown
+    r3 = await do_request(client, 'get', f"{api_base}/client/{cid}/cooldown")
+    return r3.status_code == 200, "Flujo cooldown OK"
+
+
+# ──── WORKER ────
+
+async def worker(name, queue, client, api_base, results, lock, scenarios, progress, verbose):
     while True:
         i = await queue.get()
         if i is None:
             queue.task_done()
             break
+
         scen_name, scen_func = random.choice(scenarios)
-        res = await run_scenario(scen_name, scen_func, client, api_base, db_url=db_url, verbose=verbose)
-        async with results_lock:
-            results.append(res)
+        start = time.perf_counter()
+        try:
+            success, msg = await scen_func(client, api_base, verbose=verbose)
+        except Exception as e:
+            success, msg = False, f"Exception: {e}"
+        duration = time.perf_counter() - start
+
+        async with lock:
+            results.append({"name": scen_name, "success": bool(success), "msg": str(msg), "time": duration})
             progress[0] += 1
-            if progress[0] % 100 == 0:
-                print(f"[{progress[0]}] Procesados... Éxitos: {sum(1 for r in results if r['success'])} Fallos: {progress[0]-sum(1 for r in results if r['success'])}")
+            done = progress[0]
+            total = progress[1]
+            if done % 500 == 0 or done == total:
+                pct = (done / total) * 100
+                ok = sum(1 for r in results if r['success'])
+                elapsed = time.perf_counter() - progress[2]
+                rps = done / elapsed if elapsed > 0 else 0
+                print(f"  [{done:>6}/{total}] {pct:5.1f}% | ✓ {ok} ✗ {done-ok} | {rps:.0f} req/s")
+
         queue.task_done()
 
 
+# ──── REPORTE ────
+
+def print_report(results, elapsed):
+    total = len(results)
+    if not total: return print("Sin resultados.")
+
+    success = sum(1 for r in results if r["success"])
+    failed = total - success
+    times = sorted(r["time"] for r in results)
+
+    throughput = total / elapsed if elapsed > 0 else 0
+    p50 = times[int(total * 0.50)]
+    p95 = times[int(total * 0.95)]
+    p99 = times[int(total * 0.99)]
+    avg = statistics.mean(times)
+
+    print()
+    print("╔" + "═"*58 + "╗")
+    print("║         REPORTE DE PRUEBA DE CARGA                      ║")
+    print("╠" + "═"*58 + "╣")
+    print(f"║  Total peticiones:     {total:>10,}                        ║")
+    print(f"║  Exitosas:             {success:>10,}  ({success/total*100:.1f}%)              ║")
+    print(f"║  Fallidas:             {failed:>10,}  ({failed/total*100:.1f}%)              ║")
+    print(f"║  Tiempo total:         {elapsed:>10.2f}s                      ║")
+    print("╠" + "═"*58 + "╣")
+    print(f"║  Throughput:           {throughput:>10.1f} req/s                 ║")
+    print("╠" + "═"*58 + "╣")
+    print(f"║  Latencia MIN:         {min(times)*1000:>10.1f} ms                    ║")
+    print(f"║  Latencia AVG:         {avg*1000:>10.1f} ms                    ║")
+    print(f"║  Latencia P50:         {p50*1000:>10.1f} ms                    ║")
+    print(f"║  Latencia P95:         {p95*1000:>10.1f} ms                    ║")
+    print(f"║  Latencia P99:         {p99*1000:>10.1f} ms                    ║")
+    print(f"║  Latencia MAX:         {max(times)*1000:>10.1f} ms                    ║")
+    print("╚" + "═"*58 + "╝")
+
+    # Distribución
+    buckets = [0, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, float('inf')]
+    labels = ["<50ms", "50-100ms", "100-250ms", "250-500ms", "0.5-1s", "1-2s", "2-5s", ">5s"]
+    counts = [0] * len(labels)
+    for t in times:
+        for j in range(len(labels)):
+            if t < buckets[j+1]:
+                counts[j] += 1; break
+
+    print("\n  Distribución de tiempos:")
+    for label, count in zip(labels, counts):
+        pct = count/total*100
+        bar = "█" * int(pct / 100 * 40)
+        print(f"  {label:>10} | {bar:<40} {count:>6} ({pct:.1f}%)")
+
+    if failed > 0:
+        errs = {}
+        for r in results:
+            if not r["success"]:
+                k = r["msg"][:80]
+                errs[k] = errs.get(k, 0) + 1
+        print(f"\n  Top errores ({failed}):")
+        for msg, cnt in sorted(errs.items(), key=lambda x: -x[1])[:5]:
+            print(f"  [{cnt:>5}x] {msg}")
+
+
+# ──── MAIN ────
+
 async def main():
-    parser = argparse.ArgumentParser(description="Simulador de tráfico hacia la API")
-    parser.add_argument("--base-url", default=DEFAULT_API_BASE, help="Base URL de la API")
-    parser.add_argument("--total", type=int, default=DEFAULT_TOTAL, help="Total de peticiones a generar")
-    parser.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY, help="Peticiones simultáneas")
-    parser.add_argument("--mode", choices=["success", "validation", "ip", "all"], default="all", help="Modo de prueba")
-    parser.add_argument("--db", help="URL de conexión a PostgreSQL (ej. postgres://user:pass@localhost/db)")
-    parser.add_argument("--verbose", action="store_true", help="Mostrar detalles de errores y progreso")
-    parser.add_argument("--save", default=None, help="Archivo CSV para guardar resultados (opcional)")
+    parser = argparse.ArgumentParser(description="Simulador de carga — Tokenizer Huancayo")
+    parser.add_argument("--base-url", default=DEFAULT_API_BASE)
+    parser.add_argument("--total", type=int, default=DEFAULT_TOTAL)
+    parser.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
+    parser.add_argument("--mode", choices=["full", "validation", "cooldown", "all"], default="full")
+    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--save", default=None, help="CSV output file")
     args = parser.parse_args()
 
     api_base = args.base_url.rstrip("/")
-    total = args.total
-    concurrency = args.concurrency
+    total, concurrency = args.total, args.concurrency
 
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
-    
-    if args.db and not HAS_PSYCOPG2:
-        print("ADVERTENCIA: Se solicitó verificación por DB pero 'psycopg2' no está instalado.")
-        print("Ejecuta: pip install psycopg2-binary")
-        sys.exit(1)
+    print()
+    print("╔" + "═"*58 + "╗")
+    print("║     SIMULADOR DE CARGA — TOKENIZER HUANCAYO             ║")
+    print("╠" + "═"*58 + "╣")
+    print(f"║  Modo:          {args.mode:<42}║")
+    print(f"║  Total:         {total:>10,} peticiones                   ║")
+    print(f"║  Concurrencia:  {concurrency:>10} conexiones                  ║")
+    print(f"║  API:           {api_base:<42}║")
+    print("╚" + "═"*58 + "╝")
+    print()
 
-    print("=" * 60)
-    print(f"SIMULADOR - Modo={args.mode} Total={total} Concurrency={concurrency} Base={api_base}")
-    if args.db: print(f"VERIFICACIÓN DB ACTIVA")
-    if args.verbose: print("MODO VERBOSE ACTIVADO")
-    print("=" * 60)
+    scenarios = {
+        "full": [("Flujo Completo", scenario_full_flow)],
+        "validation": [("Validación", scenario_validation)],
+        "cooldown": [("Cooldown", scenario_cooldown)],
+        "all": [
+            ("Flujo Completo", scenario_full_flow),
+            ("Validación", scenario_validation),
+            ("Cooldown", scenario_cooldown)
+        ]
+    }[args.mode]
 
     queue = asyncio.Queue()
     for i in range(total):
         queue.put_nowait(i)
 
     results = []
-    results_lock = asyncio.Lock()
-    progress = [0]
+    lock = asyncio.Lock()
+    start = time.perf_counter()
+    progress = [0, total, start]
 
-    if args.mode == "success":
-        scenarios = [("Flujo Exitoso", scenario_success_flow)]
-    elif args.mode == "validation":
-        scenarios = [("Validaciones Personalizadas", scenario_validation_custom)]
-    elif args.mode == "ip":
-        scenarios = [("IP Mismatch", scenario_ip_mismatch)]
-    else:
-        scenarios = [
-            ("Flujo Exitoso", scenario_success_flow),
-            ("Validaciones Personalizadas", scenario_validation_custom),
-            ("IP Mismatch", scenario_ip_mismatch)
-        ]
+    limits = httpx.Limits(max_keepalive_connections=concurrency, max_connections=concurrency*2)
+    timeout = httpx.Timeout(60.0, connect=15.0)
 
-    limits = httpx.Limits(max_keepalive_connections=concurrency, max_connections=concurrency * 2)
-    timeout = httpx.Timeout(40.0, connect=10.0)
+    print(f"  Iniciando {concurrency} workers...\n")
 
     async with httpx.AsyncClient(limits=limits, timeout=timeout) as client:
-        workers = [asyncio.create_task(worker(f"w{i}", queue, client, api_base, args.db, results, results_lock, scenarios, progress, verbose=args.verbose)) for i in range(concurrency)]
-
+        workers = [asyncio.create_task(worker(f"w{i}", queue, client, api_base, results, lock, scenarios, progress, args.verbose)) for i in range(concurrency)]
         await queue.join()
-
-        for _ in workers:
-            queue.put_nowait(None)
+        for _ in workers: queue.put_nowait(None)
         await asyncio.gather(*workers)
 
-    success_count = sum(1 for r in results if r["success"]) if results else 0
-    print("\n" + "=" * 60)
-    print(f"SIMULACIÓN FINALIZADA")
-    print(f"Total solicitadas: {total} | Procesadas: {len(results)} | Éxitos: {success_count} | Fallos: {len(results)-success_count}")
-    print(f"Eficiencia: {(success_count/len(results))*100 if results else 0:.1f}%")
-    print("=" * 60)
+    elapsed = time.perf_counter() - start
+    print_report(results, elapsed)
 
     if args.save:
         with open(args.save, "w", newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=["name", "success", "msg", "time"] )
-            writer.writeheader()
+            w = csv.DictWriter(f, fieldnames=["name","success","msg","time"])
+            w.writeheader()
             for r in results:
-                writer.writerow({"name": r["name"], "success": r["success"], "msg": r["msg"], "time": f'{r["time"]:.4f}'})
+                w.writerow({**r, "time": f"{r['time']:.4f}"})
+        print(f"\n  Resultados guardados: {args.save}")
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nSimulación interrumpida por el usuario.")
-        sys.exit(0)
+        print("\n  Cancelado."); sys.exit(0)

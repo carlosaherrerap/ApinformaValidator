@@ -2,48 +2,100 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-
+const path = require('path');
 const { sequelize, testConnection } = require('./config/database');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Probar conexión a la base de datos
-testConnection();
+// ──── Middleware ────
+const staticPath = path.resolve(__dirname, '../frontend');
+console.log(`[DEBUG] Sirviendo archivos estáticos desde: ${staticPath}`);
+app.use(express.static(staticPath));
+app.get('/test-admin', (req, res) => {
+  res.sendFile(path.join(staticPath, 'admin.html'));
+});
 
-// Seguridades
-app.use(helmet());
 app.use(cors());
-app.use(require('morgan')('dev'));
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+app.use(morgan('dev'));
 app.use(express.json());
 
+// Rate Limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 2000000 // Aumentado significativamente para permitir pruebas de carga masivas
+  windowMs: 15 * 60 * 1000,
+  max: 500000,
+  standardHeaders: true,
+  legacyHeaders: false
 });
-//Esto es para evitar ataques de fuerza bruta como cuando intentan adivinar la contraseña o el token, pero no es infalible. 
-//Para mayor seguridad se debe implementar un sistema de autenticación de dos factores.
 app.use('/v1/api/', limiter);
 
-// Rutas base
-app.use('/v1/api/client', require('./routes/clientRoutes')); //el require se usa para importar rutas
+// ──── Rutas ────
+app.use('/v1/api/client', require('./routes/clientRoutes'));
 app.use('/v1/api/auth', require('./routes/authRoutes'));
+app.use('/v1/api/stats', require('./routes/statsRoutes'));
 
-// Endpoint de Estado/Salud para monitoreo
+// Health check
 app.get('/v1/api/status', (req, res) => {
   res.json({
-    status: 'ok',
-    timestamp: new Date(),
-    uptime: process.uptime()
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    token_length: parseInt(process.env.TOKEN_LENGTH) || 4
   });
 });
 
-app.get('/', (req, res) => {
-  res.json({ message: 'API de Registro y Validación de Clientes activa', version: '1.0.0' });
-});
+// ──── Iniciar Servidor ────
+const start = async () => {
+  try {
+    await testConnection();
+    await sequelize.sync({ alter: true });
+    console.log('[DB] Tablas sincronizadas');
 
-// Levantar servidor
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en el puerto ${PORT}`);
-});
+    // --- ASEGURAR ADMIN ---
+    const bcrypt = require('bcrypt');
+    const User = require('./models/User');
+    const Role = require('./models/Role');
+
+    // Buscar o crear rol ADMIN
+    const [adminRole] = await Role.findOrCreate({ where: { nombre: 'ADMIN' } });
+
+    // Hash verificado para 'admin2026'
+    const adminPass = bcrypt.hashSync('admin2026', 10);
+
+    const [adminUser, created] = await User.findOrCreate({
+      where: { username: 'admin' },
+      defaults: {
+        password: adminPass,
+        email: 'admin@tokenizer.pe',
+        rol_id: adminRole.id,
+        can_view_stats: true,
+        can_view_tokens: true,
+        status: true
+      }
+    });
+
+    if (!created) {
+      await adminUser.update({ password: adminPass, status: true });
+      console.log('[DB] Password de admin actualizado/verificado');
+    } else {
+      console.log('[DB] Usuario admin creado por defecto');
+    }
+    // -----------------------
+
+    app.listen(PORT, () => {
+      console.log(`[SERVER] API corriendo en http://localhost:${PORT}`);
+      console.log(`[CONFIG] TOKEN_LENGTH=${process.env.TOKEN_LENGTH || 4}`);
+    });
+  } catch (err) {
+    console.error('[FATAL] No se pudo iniciar:', err);
+    process.exit(1);
+  }
+};
+
+start();
