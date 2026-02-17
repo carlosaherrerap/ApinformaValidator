@@ -74,7 +74,7 @@ async def do_register(session):
         "ap_paterno": faker.last_name(),
         "ap_materno": faker.last_name()
     }
-    r = await session.client.post(f"{session.api_base}/client", json=payload)
+    r = await session.client.post(f"{session.api_base}/client", json=payload, headers={"x-simulator": "true"})
     if r.status_code in (200, 201):
         return r.json().get("data", {}).get("id"), doc
     return None, None
@@ -85,7 +85,7 @@ async def do_request_token(session, client_id):
         "operador": random.choice(OPERADORES),
         "via": random.choice(VIAS)
     }
-    r = await session.client.post(f"{session.api_base}/client/{client_id}/token", json=payload)
+    r = await session.client.post(f"{session.api_base}/client/{client_id}/token", json=payload, headers={"x-simulator": "true"})
     if r.status_code == 200:
         return r.json().get("data", {}).get("token_id")
     

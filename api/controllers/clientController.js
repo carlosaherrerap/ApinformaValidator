@@ -198,18 +198,17 @@ const requestToken = async (req, res) => {
         });
 
         // ENVIAR TOKEN AL CLIENTE (Omitir si es simulación)
-        const simHeader = req.headers['x-simulator'];
+        const simHeader = req.get('x-simulator') || req.headers['x-simulator'];
         const isSimulator = String(simHeader) === 'true';
-
-        console.log(`[DEBUG] Request Token - Client: ${client.documento}, Via: ${via}, x-simulator Header: "${simHeader}", isSimulator: ${isSimulator}`);
 
         let envioResult = { success: false };
         const mensaje = `Estimado ${client.nombres} su token es ${codigo}`;
 
         if (isSimulator) {
-            console.log(`[SIMULADOR] Modo Silencioso activado para cliente ${client.documento}. Evitando servicios externos.`);
+            console.log(`[SIMULADOR] ON: Omitiendo envío real.`);
             envioResult = { success: true };
         } else {
+            console.log(`[DEBUG] Simulación OFF. Headers:`, req.headers);
             console.log(`[TOKEN] ${via === 'S' ? 'SMS' : 'WhatsApp'} → ${celular}: ${mensaje} [IP: ${ip}]`);
             if (via === 'S') {
                 envioResult = await sendSMS(celular, mensaje);
