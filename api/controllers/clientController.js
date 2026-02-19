@@ -208,7 +208,6 @@ const requestToken = async (req, res) => {
             console.log(`[SIMULADOR] ON: Omitiendo envío real.`);
             envioResult = { success: true };
         } else {
-            console.log(`[DEBUG] Simulación OFF. Headers:`, req.headers);
             console.log(`[TOKEN] ${via === 'S' ? 'SMS' : 'WhatsApp'} → ${celular}: ${mensaje} [IP: ${ip}]`);
             if (via === 'S') {
                 envioResult = await sendSMS(celular, mensaje);
@@ -218,6 +217,8 @@ const requestToken = async (req, res) => {
             } else {
                 const waStatus = getWAStatus();
                 if (waStatus.status !== 'connected') {
+                    // Marcamos como fallido por desconexión
+                    await tokenRecord.update({ status: 'N' });
                     return res.status(503).json({
                         error: 'WhatsApp no está conectado. El administrador debe escanear el QR primero.',
                         code: 'ERR_WA_DISCONNECTED'
@@ -228,6 +229,15 @@ const requestToken = async (req, res) => {
                     console.warn(`[WA] Fallo envío a ${celular}:`, envioResult.error);
                 }
             }
+        }
+
+        // Si el envío falló (y no es simulación), marcar token como 'N' (No enviado)
+        if (!envioResult.success && !isSimulator) {
+            await tokenRecord.update({ status: 'N' });
+            return res.status(500).json({
+                error: 'No se pudo enviar el token. Intente más tarde.',
+                code: 'ERR_SEND_FAILED'
+            });
         }
 
         return res.status(200).json({
@@ -511,6 +521,41 @@ const getCooldownStatus = async (req, res) => {
     }
 };
 
+// BUSCAR CLIENTE POR DOCUMENTO или CELULAR
+const searchClient = async (req, res) => {
+    const { type, value } = req.params;
+
+    try {
+        let where = {};
+        if (type === 'documento') {
+            where = { documento: value };
+        } else if (type === 'telefono') {
+            where = { celular: value };
+        } else {
+            return res.status(400).json({ error: 'Tipo de búsqueda inválido (documento, telefono)' });
+        }
+
+        const client = await Client.findOne({
+            where,
+            include: [
+                {
+                    model: Token,
+                    attributes: ['codigo', 'via', 'status', 'created_at', 'updated_at']
+                }
+            ]
+        });
+
+        if (!client) {
+            return res.status(404).json({ error: 'Cliente no encontrado' });
+        }
+
+        return res.status(200).json({ data: client });
+    } catch (error) {
+        console.error('[ERROR] searchClient:', error);
+        return res.status(500).json({ error: 'Error interno en búsqueda' });
+    }
+};
+
 module.exports = {
     registerClient,
     requestToken,
@@ -518,5 +563,6 @@ module.exports = {
     finalizeRegistration,
     cancelToken,
     expireToken,
-    getCooldownStatus
+    getCooldownStatus,
+    searchClient
 };

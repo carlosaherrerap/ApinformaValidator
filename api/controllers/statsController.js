@@ -15,6 +15,7 @@ const getDashboardStats = async (req, res) => {
         const tokensExpirados = await Token.count({ where: { status: 'E' } });
         const tokensCancelados = await Token.count({ where: { status: 'X' } });
         const tokensPendientes = await Token.count({ where: { status: 'P' } });
+        const tokensFallidos = await Token.count({ where: { status: 'N' } });
         const totalTokens = await Token.count();
 
         // Registros de las últimas 24h
@@ -35,6 +36,7 @@ const getDashboardStats = async (req, res) => {
                     validados: tokensValidados,
                     expirados: tokensExpirados,
                     cancelados: tokensCancelados,
+                    no_enviados: tokensFallidos,
                     pendientes: tokensPendientes
                 },
                 actividad: {

@@ -176,6 +176,8 @@ RESPUESTA EXITOSA (200 OK):
     "via_bloqueada": "W"
 }
 
+waSD
+
 
 ### 5. Registrar Expiración (Interno)
 POST /client/:id/expire

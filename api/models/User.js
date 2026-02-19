@@ -39,6 +39,38 @@ const User = sequelize.define('usuario', {
         allowNull: true,
         defaultValue: null
     },
+    nombres: {
+        type: DataTypes.STRING(100),
+        allowNull: true
+    },
+    ap_paterno: {
+        type: DataTypes.STRING(100),
+        allowNull: true
+    },
+    ap_materno: {
+        type: DataTypes.STRING(100),
+        allowNull: true
+    },
+    documento: {
+        type: DataTypes.STRING(20),
+        allowNull: true
+    },
+    telefono: {
+        type: DataTypes.STRING(20),
+        allowNull: true
+    },
+    departamento: {
+        type: DataTypes.STRING(100),
+        allowNull: true
+    },
+    provincia: {
+        type: DataTypes.STRING(100),
+        allowNull: true
+    },
+    distrito: {
+        type: DataTypes.STRING(100),
+        allowNull: true
+    },
     status: {
         type: DataTypes.BOOLEAN,
         defaultValue: true

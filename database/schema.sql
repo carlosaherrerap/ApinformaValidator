@@ -21,6 +21,14 @@ CREATE TABLE IF NOT EXISTS usuario (
     can_view_stats BOOLEAN DEFAULT false,
     can_view_tokens BOOLEAN DEFAULT false,
     photo VARCHAR(500),
+    nombres VARCHAR(100),
+    ap_paterno VARCHAR(100),
+    ap_materno VARCHAR(100),
+    documento VARCHAR(20),
+    telefono VARCHAR(20),
+    departamento VARCHAR(100),
+    provincia VARCHAR(100),
+    distrito VARCHAR(100),
     status BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -66,7 +74,7 @@ CREATE TABLE IF NOT EXISTS token (
     codigo VARCHAR(5) NOT NULL,
     codigo_hash VARCHAR(255) NOT NULL,
     via CHAR(1) NOT NULL CHECK (via IN ('S', 'W')),
-    status CHAR(1) DEFAULT 'P' CHECK (status IN ('P', 'V', 'E', 'X')),
+    status CHAR(1) DEFAULT 'P' CHECK (status IN ('P', 'V', 'E', 'X', 'N')),
     ip_solicitante VARCHAR(45),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()

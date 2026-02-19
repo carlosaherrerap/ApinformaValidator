@@ -29,7 +29,7 @@ const Token = sequelize.define('token', {
     status: {
         type: DataTypes.CHAR(1),
         defaultValue: 'P',
-        validate: { isIn: [['P', 'V', 'E', 'X']] }
+        validate: { isIn: [['P', 'V', 'E', 'X', 'N']] }
     },
     ip_solicitante: {
         type: DataTypes.STRING(45)

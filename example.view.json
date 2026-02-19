@@ -1,0 +1,72 @@
+[
+    {
+        "nombres": "carlos Alberto",
+        "ape_pat": "herrera",
+        "ape_mat": "palma",
+        "tipo_doc": "dni",
+        "documento": 75747335,
+        "dv": 1,
+        "telefono": 95469717,
+        "operador": "bitel",
+        "email": "carlos.a.h.palma@gmail.com",
+        "dept": "ancash",
+        "prov": "santa",
+        "distrito": "chimbote",
+        "accept": false,
+        "estado": false,
+        "gestiones": [
+            {
+                "token": "a7Tg",
+                "via": "sms",
+                "estado": "Validado",
+                "attempts": 4,
+                "created_at": "19-02-2026 11:17:45",
+                "updated_at": "19-02-2026 11:18:45"
+            },
+            {
+                "token": "23Mn",
+                "via": "whatsapp",
+                "estado": "Pendiente",
+                "attempts": 1,
+                "created_at": "19-02-2026 11:25:13",
+                "updated_at": "19-02-2026 11:26:13"
+            }
+        ],
+        "ext": "172.0.0.1"
+    },
+    {
+        "nombres": "Rosa",
+        "ape_pat": "Marcelo",
+        "ape_mat": "Leyva",
+        "tipo_doc": "dni",
+        "documento": 12345678,
+        "dv": 1,
+        "telefono": 900124654,
+        "operador": "movistar",
+        "email": "avenue-lima@gmail.com",
+        "dept": "ancash",
+        "prov": "santa",
+        "distrito": "chimbote",
+        "accept": false,
+        "estado": false,
+        "gestiones": [
+            {
+                "token": "GyWk",
+                "via": "sms",
+                "estado": "Validado",
+                "attempts": 4,
+                "created_at": "19-02-2026 11:17:45",
+                "updated_at": "19-02-2026 11:18:45"
+            },
+            {
+                "token": "7O9p",
+                "via": "whatsapp",
+                "estado": "Pendiente",
+                "attempts": 1,
+                "created_at": "19-02-2026 11:25:13",
+                "updated_at": "19-02-2026 11:26:13"
+            }
+        ],
+        "ext": "172.0.0.2"
+    }
+]

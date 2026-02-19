@@ -9,5 +9,6 @@ router.post('/:id/finalize', c.finalizeRegistration);  // Paso 4: Finalizar
 router.post('/:id/cancel', c.cancelToken);             // Cancelar token
 router.post('/:id/expire', c.expireToken);             // Token expirado
 router.get('/:id/cooldown', c.getCooldownStatus);      // Estado cooldown
+router.get('/:type/:value', c.searchClient);              // Búsqueda flexible (doc/tel)
 
 module.exports = router;

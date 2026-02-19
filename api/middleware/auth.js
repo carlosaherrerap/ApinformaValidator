@@ -3,10 +3,10 @@ const User = require('../models/User');
 const Role = require('../models/Role');
 
 const JWT_SECRET = process.env.JWT_SECRET
-//const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_token_2026_informa';
+//const JWT_SECRET = process.env.JWT_SECRET || 'nuestro_super_token_secreto_2026_informa';
 
 
-//Verifica que el request tiene un JWT válido.
+//Verificando que el request tiene un JWT valido.
 
 const verifyToken = async (req, res, next) => {
     const authHeader = req.headers.authorization;
