@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS token (
     codigo VARCHAR(5) NOT NULL,
     codigo_hash VARCHAR(255) NOT NULL,
     via CHAR(1) NOT NULL CHECK (via IN ('S', 'W')),
-    status CHAR(1) DEFAULT 'P' CHECK (status IN ('P', 'V', 'E', 'X', 'N')),
+    status CHAR(1) DEFAULT 'P' CHECK (status IN ('P', 'V', 'E', 'X', 'N')), -- P: Pendiente, V: Validado, E: Expirado, X: Cancelado, N: No enviado
     ip_solicitante VARCHAR(45),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()

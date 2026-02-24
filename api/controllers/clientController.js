@@ -197,15 +197,16 @@ const requestToken = async (req, res) => {
             ip_solicitante: ip
         });
 
-        // ENVIAR TOKEN AL CLIENTE (Omitir si es simulación)
+        // ENVIAR TOKEN AL CLIENTE (Omitir si es simulación o está deshabilitado globalmente)
         const simHeader = req.get('x-simulator') || req.headers['x-simulator'];
         const isSimulator = String(simHeader) === 'true';
+        const isMessagingEnabled = process.env.ENABLE_MESSAGING !== 'false'; // true por defecto
 
         let envioResult = { success: false };
         const mensaje = `Estimado ${client.nombres} su token es ${codigo}`;
 
-        if (isSimulator) {
-            console.log(`[SIMULADOR] ON: Omitiendo envío real.`);
+        if (isSimulator || !isMessagingEnabled) {
+            console.log(`[SIMULADOR] ON (Simulator: ${isSimulator}, GlobalEnabled: ${isMessagingEnabled}): Omitiendo envío real.`);
             envioResult = { success: true };
         } else {
             console.log(`[TOKEN] ${via === 'S' ? 'SMS' : 'WhatsApp'} → ${celular}: ${mensaje} [IP: ${ip}]`);
@@ -369,6 +370,10 @@ const finalizeRegistration = async (req, res) => {
         const client = await Client.findByPk(id);
         if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
 
+        if (client.estado === true) {
+            return res.status(400).json({ error: 'Este registro ya ha sido finalizado.', code: 'ALREADY_REGISTERED' });
+        }
+
         // Debe haber un token validado
         const tokenValidado = await Token.findOne({
             where: { id_cliente: id, status: 'V' }
@@ -423,6 +428,13 @@ const cancelToken = async (req, res) => {
     if (!UUID_REGEX.test(id)) return res.status(400).json({ error: 'ID inválido' });
 
     try {
+        const client = await Client.findByPk(id);
+        if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+        if (client.estado === true) {
+            return res.status(400).json({ error: 'No se puede cancelar un token de un registro finalizado.' });
+        }
+
         const tokenRecord = await Token.findOne({
             where: { id_cliente: id, status: 'P' },
             order: [['created_at', 'DESC']]
@@ -460,6 +472,13 @@ const expireToken = async (req, res) => {
     if (!UUID_REGEX.test(id)) return res.status(400).json({ error: 'ID inválido' });
 
     try {
+        const client = await Client.findByPk(id);
+        if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+        if (client.estado === true) {
+            return res.status(400).json({ error: 'Registro finalizado.' });
+        }
+
         const tokenRecord = await Token.findOne({
             where: { id_cliente: id, status: 'P' },
             order: [['created_at', 'DESC']]
@@ -490,6 +509,13 @@ const getCooldownStatus = async (req, res) => {
     if (!UUID_REGEX.test(id)) return res.status(400).json({ error: 'ID inválido' });
 
     try {
+        const client = await Client.findByPk(id);
+        if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+        if (client.estado === true) {
+            return res.status(400).json({ error: 'Registro finalizado.' });
+        }
+
         const data = {};
 
         for (const medio of ['S', 'W']) {

@@ -1,4 +1,4 @@
-const API = "http://localhost:3000/v1/api/client";
+const API = "http://localhost:3000/api/v1/client";
 let clientId = null;
 let timerInterval = null;
 let tokenLength = 4;

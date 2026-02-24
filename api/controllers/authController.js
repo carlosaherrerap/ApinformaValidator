@@ -2,6 +2,8 @@ const User = require('../models/User');
 const Role = require('../models/Role');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { sendWhatsApp } = require('../services/whatsappService');
+const { sendSMS } = require('../services/smsService');
 
 // LISTAR USUARIOS
 const listUsers = async (req, res) => {
@@ -86,17 +88,49 @@ const deleteUser = async (req, res) => {
 
 // LOGIN
 const login = async (req, res) => {
-    const { username, password } = req.body;
+    const { username, password, usuario, clave } = req.body;
+    const finalUsername = usuario || username;
+    const finalPassword = clave || password;
+
     try {
         const user = await User.findOne({
-            where: { username },
+            where: { username: finalUsername },
             include: [Role]
         });
 
-        if (!user || !(await bcrypt.compare(password, user.password))) {
+        if (!user || !(await bcrypt.compare(finalPassword, user.password))) {
             return res.status(401).json({ error: 'Credenciales inválidas' });
         }
 
+        // --- FLUJO MFA ---
+        if (user.mfa_enabled) {
+            const mfaCode = Math.floor(100000 + Math.random() * 900000).toString(); // 6 dígitos
+            const expires = new Date(Date.now() + 5 * 60 * 1000); // 5 minutos
+
+            await user.update({ mfa_secret: mfaCode, mfa_expires: expires });
+
+            // Enviar por WhatsApp si tiene teléfono
+            if (user.telefono) {
+                const msg = `[TOKENIZER] Su código de acceso es: ${mfaCode}. Válido por 5 minutos.`;
+                await sendWhatsApp(user.telefono, msg);
+                console.log(`[MFA] Código enviado a ${user.telefono}`);
+            }
+
+            // Token temporal para el paso 2
+            const tempToken = jwt.sign(
+                { id: user.id, mfa_pending: true },
+                process.env.JWT_SECRET,
+                { expiresIn: '5m' }
+            );
+
+            return res.status(200).json({
+                mfa_required: true,
+                temp_token: tempToken,
+                message: 'Código de verificación enviado vía WhatsApp/SMS'
+            });
+        }
+
+        // LOGIN DIRECTO (SIN MFA)
         const token = jwt.sign(
             { id: user.id, username: user.username, role: user.rol.nombre },
             process.env.JWT_SECRET,
@@ -104,12 +138,13 @@ const login = async (req, res) => {
         );
 
         return res.status(200).json({
-            token,
+            access_token: token,
+            token_type: 'Bearer',
+            expires_in: 28800, // 8 horas
             user: {
                 id: user.id,
                 username: user.username,
-                role: user.rol.nombre,
-                nombres: user.nombres
+                role: user.rol.nombre
             }
         });
     } catch (error) {
@@ -119,6 +154,47 @@ const login = async (req, res) => {
 };
 
 // LOGOUT
+// VERIFICAR MFA
+const verifyMFA = async (req, res) => {
+    const { temp_token, mfa_code } = req.body;
+
+    try {
+        const decoded = jwt.verify(temp_token, process.env.JWT_SECRET);
+        if (!decoded.mfa_pending) return res.status(400).json({ error: 'Token inválido' });
+
+        const user = await User.findByPk(decoded.id, { include: [Role] });
+        if (!user || user.mfa_secret !== mfa_code) {
+            return res.status(401).json({ error: 'Código MFA incorrecto' });
+        }
+
+        if (new Date() > user.mfa_expires) {
+            return res.status(401).json({ error: 'Código MFA expirado' });
+        }
+
+        // Limpiar MFA tras éxito
+        await user.update({ mfa_secret: null, mfa_expires: null });
+
+        const token = jwt.sign(
+            { id: user.id, username: user.username, role: user.rol.nombre },
+            process.env.JWT_SECRET,
+            { expiresIn: '8h' }
+        );
+
+        return res.status(200).json({
+            access_token: token,
+            token_type: 'Bearer',
+            expires_in: 28800,
+            user: {
+                id: user.id,
+                username: user.username,
+                role: user.rol.nombre
+            }
+        });
+    } catch (error) {
+        return res.status(401).json({ error: 'Sesión de verificación expirada o inválida' });
+    }
+};
+
 const logout = async (req, res) => {
     // En JWT el logout suele manejarse en el cliente invalidando el token,
     // pero podemos retornar éxito para confirmación.
@@ -131,5 +207,6 @@ module.exports = {
     updateUser,
     deleteUser,
     login,
+    verifyMFA,
     logout
 };

@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:3000/v1/api';
+const API_BASE = 'http://localhost:3000/api/v1';
 let jwt = null;
 let currentUser = {};
 let clientPage = 1;
@@ -10,9 +10,9 @@ async function doLogin() {
     const u = document.getElementById('login-user').value;
     const p = document.getElementById('login-pass').value;
     try {
-        const res = await fetch(`${API_BASE}/auth/login`, {
+        const res = await fetch(`${API_BASE}/auth/login/auth`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: u, password: p })
+            body: JSON.stringify({ usuario: u, clave: p }) // Coincidir con especificación admin2026
         });
         const json = await res.json();
         if (res.ok) {
@@ -114,7 +114,7 @@ async function checkSession() {
     if (!stored) return;
     jwt = stored;
     try {
-        const res = await fetch(`${API_BASE}/auth/profile`, { headers: headers() });
+        const res = await fetch(`${API_BASE}/auth/users`, { headers: headers() }); // Perfil simplificado a lista por ahora
         if (res.ok) {
             const json = await res.json();
             currentUser = json.data; // datos del perfil
@@ -316,7 +316,7 @@ async function createUser() {
         rol_id: parseInt(document.getElementById('new-role').value)
     };
     try {
-        const res = await fetch(`${API_BASE}/auth/users`, { method: 'POST', headers: headers(), body: JSON.stringify(body) });
+        const res = await fetch(`${API_BASE}/auth/user`, { method: 'POST', headers: headers(), body: JSON.stringify(body) });
         if (res.ok) {
             loadUsers();
             document.getElementById('create-user-form').classList.add('hidden');

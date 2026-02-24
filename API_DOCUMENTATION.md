@@ -1,150 +1,158 @@
 # Documentación de la API - Tokenizer Huancayo
 
-Esta guía detalla los endpoints disponibles, los formatos de datos (payloads) y las respuestas esperadas para la integración del sistema Tokenizer.
+Esta documentación técnica cataloga todos los recursos disponibles en la API de Tokenizer, organizados por módulos y flujo de operación.
 
-> [!NOTE]
-> Todos los endpoints de la API deben llevar el prefijo `/api/v1/`.
-
-## 🌐 Base URL
-`http://localhost:3000/api/v1`
+> [!IMPORTANT]
+> **Base URL:** `http://localhost:3000/api/v1`
+>
+> **Simulación y Control Global:** 
+> - Para pruebas individuales: Añada el header `x-simulator: true` en la petición.
+> - Para control global del servidor: Configure `ENABLE_MESSAGING=false` en el archivo `.env` para deshabilitar todos los envíos reales.
 
 ---
 
-## 🔑 Autenticación y Sesión
+## 🛡️ Autenticación y Seguridad
 
-### 1. Iniciar Sesión (Login)
-Autentica a un administrador u operador para obtener un token JWT.
+Todas las peticiones a los módulos de **Usuarios**, **Estadísticas** y **QR** requieren un token JWT en el header:
+`Authorization: Bearer <TOKEN>`
 
+### 1. Autenticación (OAuth 2.0 + MFA)
+
+Este módulo implementa un flujo de seguridad de dos pasos:
+1. **Validación de Aplicación:** Requiere `Authorization: Basic [CLIENT_ID:CLIENT_SECRET]`.
+2. **Autenticación de Usuario:** Validación de credenciales.
+3. **MFA (WhatsApp):** Verificación de código OTP.
+
+#### A. Iniciar Sesión (Paso 1)
 *   **Endpoint:** `POST /auth/login/auth`
-*   **Payload (JSON):**
-```json
-{
-  "usuario": "admin",
-  "clave": "admin2026"
-}
-```
-*   **Respuesta Exitosa (200 OK):**
-```json
-{
-    "token": "eyJhbGciOiJIUzI1...",
-    "user": {
-        "id": "...",
-        "username": "admin",
-        "role": "ADMIN",
-        "nombres": "Admin"
+
+> [!IMPORTANT]
+> **Configuración en Postman:**
+> 1. **Pestaña "Authorization":** Seleccione Tipo `Basic Auth`. 
+>    - **Username:** `token_client_2026` (Es el Client ID de la App)
+>    - **Password:** `secret_client_vault_2026` (Es el Client Secret de la App)
+> 2. **Pestaña "Body":** Seleccione `raw` -> `JSON`.
+>    - **Contenido:** `{ "usuario": "admin", "clave": "admin2026" }` (Credenciales del Humano)
+
+*   **Respuesta (Si MFA activo):**
+    ```json
+    {
+        "mfa_required": true,
+        "temp_token": "eyJhbG...",
+        "message": "Código de verificación enviado vía WhatsApp/SMS"
     }
-}
-```
+    ```
 
-### 2. Cerrar Sesión (Logout)
-Finaliza la sesión del usuario.
-
-*   **Endpoint:** `POST /auth/logout/auth`
+#### B. Verificar OTP (Paso 2)
+*   **Endpoint:** `POST /auth/login/mfa`
+*   **Header Obligatorio:** `Authorization: Basic ...` (Igual al paso 1)
+*   **Payload:**
+    ```json
+    { 
+        "temp_token": "TOKEN_RECIBIDO_EN_PASO_1",
+        "mfa_code": "123456" 
+    }
+    ```
+*   **Respuesta Éxito (OAuth 2.0):**
+    ```json
+    {
+        "access_token": "JWT_FINAL",
+        "token_type": "Bearer",
+        "expires_in": 28800,
+        "user": { "id": "...", "username": "admin", "role": "ADMIN" }
+    }
+    ```
 
 ---
 
-## 👥 Gestión de Usuarios (CRUD)
-*Requiere cabecera `Authorization: Bearer <TOKEN>`*
-
-### 1. Listar Usuarios
-Obtiene la lista de todos los usuarios registrados.
-
-*   **Endpoint:** `GET /auth/users`
-
-### 2. Crear Usuario
-Registra un nuevo usuario administrativo u operador.
-
-*   **Endpoint:** `POST /auth/user`
-*   **Payload (JSON):**
-```json
-{
-    "username": "operador1",
-    "password": "password123",
-    "email": "operador@tokenizer.pe",
-    "nombres": "Carlos",
-    "ap_paterno": "Herrera",
-    "ap_materno": "Palma",
-    "documento": "75747335",
-    "rol_id": 2
-}
-```
-
-### 3. Editar Usuario
-Actualiza los datos de un usuario existente.
-
-*   **Endpoint:** `PUT /auth/user/:id`
-
-### 4. Eliminar Usuario
-Elimina un usuario del sistema.
-
-*   **Endpoint:** `DELETE /auth/user/:id`
-
------------
-
-## 📱 Flujo de Cliente y Token
+## 📱 Ciclo de Vida del Registro (Flujo del Cliente)
 
 ### 1. Registro Inicial (Paso 1)
-Crea un nuevo cliente en estado pendiente.
-
-*   **Endpoint:** `POST /client`
-*   **Payload (JSON):**
-```json
-{
-  "tipo_documento": "DNI",
-  "documento": "12345678",
-  "dv": "9",
-  "nombres": "Juan",
-  "ap_paterno": "Perez",
-  "ap_materno": "Gomez"
-}
-```
+Crea la identidad del cliente en el sistema.
+*   **Endpoint:** `POST /client/`
+*   **Payload:**
+    ```json
+    {
+      "tipo_documento": "DNI",
+      "documento": "12345678",
+      "dv": "9",
+      "nombres": "Juan",
+      "ap_paterno": "Perez",
+      "ap_materno": "Gomez"
+    }
+    ```
 
 ### 2. Solicitud de Token (Paso 2)
-Genera un código y lo envía vía SMS o WhatsApp.
-
+Envía un código de validación al celular.
 *   **Endpoint:** `POST /client/:id/token`
-*   **Payload (JSON):**
-```json
-{
-  "celular": "987654321",
-  "operador": "MOVISTAR",
-  "via": "S" 
-}
-```
+*   **Payload:**
+    ```json
+    { "celular": "987654321", "operador": "BITEL", "via": "S" }
+    ```
 *   **Vías:** `S` (SMS), `W` (WhatsApp).
-*   **Status 'N':** Si el envío falla, el token se registrará con estado `N` (No enviado).
+*   **Nota:** Si el servicio falla, el token queda en estado `N` (No enviado).
 
-### 3. Verificación de Código (Paso 3)
+### 3. Verificar Código (Paso 3)
 Valida el token ingresado por el usuario.
+*   **Endpoint:** `GET /client/:id/verify/:codigo`
+*   **Status:** Retorna `VALIDADO` si el código es correcto.
 
-*   **Endpoint:** `GET /client/:id/verify/:token`
+### 4. Finalizar Registro (Paso 4)
+Completa los datos de ubicación y correo tras la validación exitosa.
+*   **Endpoint:** `POST /client/:id/finalize`
+*   **Payload:**
+    ```json
+    {
+      "correo": "juan@example.com",
+      "departamento": "JUNIN",
+      "provincia": "HUANCAYO",
+      "distrito": "EL TAMBO",
+      "acepto_terminos": true
+    }
+    ```
 
-### 4. Búsqueda Flexible de Clientes
-Busca un cliente y su historial por documento o teléfono.
-
-*   **Endpoint:** `GET /client/:type/:value`
-*   **Ejemplos:**
-    - `/api/v1/client/documento/75747335`
-    - `/api/v1/client/telefono/987654321`
-
----
-
-## 📊 Estadísticas y Monitoreo
-
-### 1. Dashboard de Estadísticas
-Obtiene contadores generales de clientes y estados de tokens.
-
-*   **Endpoint:** `GET /stats/dashboard`
-*   **Respuesta:** Incluye el conteo de tokens `no_enviados` (status N).
-
-### 2. Estado del Sistema
-*   **Endpoint:** `GET /status` (Mueve a `/api/v1/status`)
+### 5. Acciones Adicionales
+*   **Cancelar Token:** `POST /client/:id/cancel` (Invalida el token actual manualmente).
+*   **Expirar Token:** `POST /client/:id/expire` (Marca el token como expirado).
+*   **Estado Cooldown:** `GET /client/:id/cooldown` (Muestra intentos y tiempo de espera restante).
 
 ---
 
-## 🚀 Uso con Postman
+## 👥 Gestión de Usuarios ADMINISTRACION (CRUD)
 
-1.  **Variables de Entorno:** Crea un entorno en Postman con `base_url = http://localhost:3000/api/v1`.
-2.  **Login:** Ejecuta el POST de Login, copia el `token` recibido.
-3.  **Auth:** En la pestaña "Auth" de tus peticiones, selecciona "Bearer Token" y pega el token.
-4.  **Headers:** Para el simulador de carga, añade el header `x-simulator: true`.
+Módulo exclusivo para administradores para gestionar el personal.
+
+-   **Listar Todos:** `GET /auth/users`
+-   **Crear:** `POST /auth/user`
+    - Payload: `username`, `password`, `email`, `nombres`, `ap_paterno`, `ap_materno`, `documento`, `telefono`, `departamento`, `provincia`, `distrito`, `rol_id`.
+-   **Editar:** `PUT /auth/user/:id`
+-   **Eliminar:** `DELETE /auth/user/:id`
+
+---
+
+## 📊 Estadísticas y Consultas de las validaciones
+
+-   **Dashboard Global:** `GET /stats/dashboard` (Resumen de clientes y estados de tokens).
+-   **Lista de Clientes:** `GET /stats/clients` (Soporta `?page=X`, `?search=Y`).
+-   **Detalle de Cliente:** `GET /stats/clients/:id` (Incluye historial completo de gestiones).
+-   **Búsqueda Rápida:** `GET /client/:type/:value` (Busca por `documento` o `telefono`).
+-   **Ver Token Plano:** `GET /stats/tokens/:tokenId` (Permite ver el código generado para soporte técnico).
+
+---
+
+## 🛠️ Herramientas de Sistema
+
+### 1. Gestión de WhatsApp QR
+*   **Generar QR:** `POST /auth/qr/generate`
+*   **Invalidar QR:** `POST /auth/qr/invalidate`
+
+### 2. Salud del Sistema
+*   **Health Check:** `GET /api/v1/status` (Muestra uptime y conexión a DB).
+
+---
+
+## 🚀 Guía para Postman
+
+1.  **Variables:** Use `{{base_url}}` para `http://localhost:3000/api/v1`.
+2.  **Auth:** Use el tipo "Bearer Token" en la pestaña Authorization para los endpoints protegidos.
+3.  **Visualizadores:** El endpoint de **Dashboard** retorna JSON estructurado ideal para paneles de control.

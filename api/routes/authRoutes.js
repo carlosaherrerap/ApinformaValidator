@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../controllers/authController');
 const { verifyToken, isAdmin } = require('../middleware/auth');
+const { clientAuth } = require('../middleware/clientAuth');
 
-// Público
-router.post('/login/auth', auth.login);
+// Público (Protegido por Client Credentials)
+router.post('/login/auth', clientAuth, auth.login);
+router.post('/login/mfa', clientAuth, auth.verifyMFA);
 
 // Gestión de usuarios
 router.get('/users', auth.listUsers);

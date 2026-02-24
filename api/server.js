@@ -41,7 +41,7 @@ app.use('/api/v1/auth', require('./routes/authRoutes'));
 app.use('/api/v1/stats', require('./routes/statsRoutes'));
 
 // Health check
-app.get('/v1/api/status', (req, res) => {
+app.get('/api/v1/status', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
@@ -73,10 +73,12 @@ const start = async () => {
       defaults: {
         password: adminPass,
         email: 'admin@tokenizer.pe',
+        telefono: '956469717', // Teléfono para MFA del admin
         rol_id: adminRole.id,
         can_view_stats: true,
         can_view_tokens: true,
-        status: true
+        status: true,
+        mfa_enabled: true
       }
     });
 

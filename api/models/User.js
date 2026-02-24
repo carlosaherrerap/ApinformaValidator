@@ -74,6 +74,18 @@ const User = sequelize.define('usuario', {
     status: {
         type: DataTypes.BOOLEAN,
         defaultValue: true
+    },
+    mfa_enabled: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    mfa_secret: {
+        type: DataTypes.STRING(10),
+        allowNull: true
+    },
+    mfa_expires: {
+        type: DataTypes.DATE,
+        allowNull: true
     }
 }, { tableName: 'usuario' });
 

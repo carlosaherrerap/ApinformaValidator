@@ -20,7 +20,9 @@ const authHeader = `Basic ${auth}`;
  */
 async function sendSMS(number, message) {
     try {
-        const url = `${SMS_BASE_URL}/sms/send-unique-message`;
+        // Asegurar que no haya / al final de la base para evitar // si se agrega manualmente
+        const baseUrl = SMS_BASE_URL.replace(/\/$/, "");
+        const url = `${baseUrl}/sms/send-unique-message`;
 
         const res = await fetch(url, {
             method: 'POST',

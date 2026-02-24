@@ -24,6 +24,8 @@ services:
       PORT: 3000
       JWT_SECRET: super_secret_token_2026_informa
       TOKEN_LENGTH: 4
+    env_file:
+      - .env
     depends_on:
       - db
 
