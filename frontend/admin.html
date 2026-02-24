@@ -17,13 +17,25 @@
         <div class="login-card">
             <h2>🔐 Admin Panel</h2>
             <p>Tokenizer Huancayo</p>
-            <div class="mb-3">
-                <input type="text" id="login-user" class="form-control" placeholder="Username">
+            <div id="login-fields">
+                <div class="mb-3">
+                    <input type="text" id="login-user" class="form-control" placeholder="Username">
+                </div>
+                <div class="mb-3">
+                    <input type="password" id="login-pass" class="form-control" placeholder="Password">
+                </div>
+                <button class="btn-accent" onclick="doLogin()">Ingresar</button>
             </div>
-            <div class="mb-3">
-                <input type="password" id="login-pass" class="form-control" placeholder="Password">
+            
+            <div id="mfa-fields" class="hidden">
+                <p class="small text-muted">Se ha enviado un código a su WhatsApp</p>
+                <div class="mb-3">
+                    <input type="text" id="login-otp" class="form-control" placeholder="Código de 6 dígitos">
+                </div>
+                <button class="btn-accent" onclick="verifyOTP()">Verificar Código</button>
+                <button class="btn-link btn-sm mt-2" style="color:var(--muted);text-decoration:none;" onclick="cancelMFA()">← Regresar</button>
             </div>
-            <button class="btn-accent" onclick="doLogin()">Ingresar</button>
+
             <div id="login-error" style="color:var(--danger);text-align:center;font-size:.8rem;margin-top:10px;"></div>
         </div>
     </div>

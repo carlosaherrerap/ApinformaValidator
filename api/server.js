@@ -33,7 +33,7 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false
 });
-app.use('/v1/api/', limiter);
+app.use('/api/v1/', limiter);
 
 //  Rutas 
 app.use('/api/v1/client', require('./routes/clientRoutes'));
@@ -48,6 +48,12 @@ app.get('/api/v1/status', (req, res) => {
     uptime: process.uptime(),
     token_length: parseInt(process.env.TOKEN_LENGTH) || 4
   });
+});
+
+// Middleware para capturar 404 y loguear el error
+app.use((req, res) => {
+  console.warn(`[404] No encontrado: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ error: `Ruta no encontrada: ${req.method} ${req.url}` });
 });
 
 // Iniciar Servidor 
@@ -76,6 +82,7 @@ const start = async () => {
         telefono: '956469717', // Teléfono para MFA del admin
         rol_id: adminRole.id,
         can_view_stats: true,
+        can_view_data: true,
         can_view_tokens: true,
         status: true,
         mfa_enabled: true

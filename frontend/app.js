@@ -4,33 +4,82 @@ let currentUser = {};
 let clientPage = 1;
 let waStatusInterval = null;
 
+const CLIENT_AUTH = 'Basic ' + btoa('token_client_2026:secret_client_vault_2026');
+let tempMfaToken = null;
+
 function headers() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwt }; }
+function authHeaders() { return { 'Content-Type': 'application/json', 'Authorization': CLIENT_AUTH }; }
 
 async function doLogin() {
     const u = document.getElementById('login-user').value;
     const p = document.getElementById('login-pass').value;
+    document.getElementById('login-error').textContent = '';
+
     try {
         const res = await fetch(`${API_BASE}/auth/login/auth`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ usuario: u, clave: p }) // Coincidir con especificación admin2026
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify({ usuario: u, clave: p })
         });
         const json = await res.json();
+
         if (res.ok) {
-            jwt = json.token;
-            currentUser = json.user;
-            localStorage.setItem('token', jwt); // guardar token
-            updateTopBar(json.user);
-            if (currentUser.role !== 'ADMIN') {
-                document.getElementById('nav-users').classList.add('hidden');
-                document.getElementById('nav-whatsapp').classList.add('hidden');
+            if (json.mfa_required) {
+                tempMfaToken = json.temp_token;
+                document.getElementById('login-fields').classList.add('hidden');
+                document.getElementById('mfa-fields').classList.remove('hidden');
+                return;
             }
-            document.getElementById('loginView').classList.add('hidden');
-            document.getElementById('dashView').classList.remove('hidden');
-            loadStats();
+
+            // Login directo (si no requiere MFA)
+            onLoginSuccess(json);
         } else {
             document.getElementById('login-error').textContent = json.error;
         }
     } catch (e) { document.getElementById('login-error').textContent = 'Error de conexión'; }
+}
+
+async function verifyOTP() {
+    const otp = document.getElementById('login-otp').value;
+    if (!otp) return;
+    document.getElementById('login-error').textContent = '';
+
+    try {
+        const res = await fetch(`${API_BASE}/auth/login/mfa`, {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify({ temp_token: tempMfaToken, mfa_code: otp })
+        });
+        const json = await res.json();
+
+        if (res.ok) {
+            onLoginSuccess(json);
+        } else {
+            document.getElementById('login-error').textContent = json.error;
+        }
+    } catch (e) { document.getElementById('login-error').textContent = 'Error al validar OTP'; }
+}
+
+function cancelMFA() {
+    tempMfaToken = null;
+    document.getElementById('mfa-fields').classList.add('hidden');
+    document.getElementById('login-fields').classList.remove('hidden');
+}
+
+function onLoginSuccess(json) {
+    jwt = json.access_token || json.token;
+    currentUser = json.user;
+    localStorage.setItem('token', jwt);
+    updateTopBar(json.user);
+    if (currentUser.role !== 'ADMIN') {
+        document.getElementById('nav-users').classList.add('hidden');
+        document.getElementById('nav-whatsapp').classList.add('hidden');
+    }
+    document.getElementById('loginView').classList.add('hidden');
+    document.getElementById('dashView').classList.remove('hidden');
+    document.getElementById('mfa-fields').classList.add('hidden'); // por si acaso
+    document.getElementById('login-fields').classList.remove('hidden');
+    loadStats();
 }
 
 function updateTopBar(user) {

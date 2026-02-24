@@ -34,6 +34,10 @@ const User = sequelize.define('usuario', {
         type: DataTypes.BOOLEAN,
         defaultValue: false
     },
+    can_view_data: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
     photo: {
         type: DataTypes.STRING(500),
         allowNull: true,

@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Role = require('../models/Role');
+const SessionBlacklist = require('../models/SessionBlacklist');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { sendWhatsApp } = require('../services/whatsappService');
@@ -19,7 +20,7 @@ const listUsers = async (req, res) => {
     }
 };
 
-// CREAR USUARIO
+// CREAR USUARIO (permisos automáticos según rol)
 const createUser = async (req, res) => {
     const {
         username, password, email, nombres, ap_paterno, ap_materno,
@@ -28,6 +29,17 @@ const createUser = async (req, res) => {
 
     try {
         const hash = await bcrypt.hash(password, 10);
+
+        // Auto-asignar permisos según rol:
+        // Rol 1 (ADMIN): ve todo (stats, data, tokens)
+        // Rol 2 (OPERADOR): solo ve números (stats)
+        const isAdminRole = parseInt(rol_id) === 1;
+        const permissions = {
+            can_view_stats: true,                    // Todos ven números
+            can_view_data: isAdminRole,              // Solo ADMIN ve datos de clientes
+            can_view_tokens: isAdminRole             // Solo ADMIN ve tokens planos
+        };
+
         const user = await User.create({
             username,
             password: hash,
@@ -40,9 +52,11 @@ const createUser = async (req, res) => {
             departamento,
             provincia,
             distrito,
-            rol_id
+            rol_id,
+            ...permissions
         });
 
+        console.log(`[AUTH] Usuario '${username}' creado con rol ${rol_id}. Permisos: stats=${permissions.can_view_stats}, data=${permissions.can_view_data}, tokens=${permissions.can_view_tokens}`);
         const { password: _, ...userData } = user.toJSON();
         return res.status(201).json({ message: 'Usuario creado', data: userData });
     } catch (error) {
@@ -195,10 +209,104 @@ const verifyMFA = async (req, res) => {
     }
 };
 
+// OBTENER PERFIL
+const getProfile = async (req, res) => {
+    console.log(`[AUTH] Solicitando perfil para ID: ${req.user.id}`);
+    try {
+        const user = await User.findByPk(req.user.id, {
+            include: [Role],
+            attributes: { exclude: ['password', 'mfa_secret'] }
+        });
+        if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+        return res.status(200).json({
+            data: {
+                id: user.id,
+                username: user.username,
+                role: user.rol.nombre,
+                email: user.email,
+                photo: user.photo,
+                nombres: user.nombres,
+                can_view_stats: user.can_view_stats,
+                can_view_data: user.can_view_data,
+                can_view_tokens: user.can_view_tokens
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ error: 'Error al obtener perfil' });
+    }
+};
+
+// ACTUALIZAR MI PERFIL
+const updateProfile = async (req, res) => {
+    const { email, photo, telefono, current_password, new_password } = req.body;
+
+    try {
+        const user = await User.findByPk(req.user.id, { include: [Role] });
+        if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+        const updateData = {};
+
+        if (email) updateData.email = email;
+        if (photo !== undefined) updateData.photo = photo;
+        if (telefono) updateData.telefono = telefono;
+
+        // Cambio de contraseña: requiere la contraseña actual
+        if (new_password) {
+            if (!current_password) {
+                return res.status(400).json({ error: 'Debe proporcionar la contraseña actual para cambiarla' });
+            }
+            const isValid = await bcrypt.compare(current_password, user.password);
+            if (!isValid) {
+                return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+            }
+            updateData.password = await bcrypt.hash(new_password, 10);
+        }
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ error: 'No se enviaron campos para actualizar' });
+        }
+
+        await user.update(updateData);
+        console.log(`[AUTH] Perfil actualizado para: ${req.user.username}`);
+
+        return res.status(200).json({
+            message: 'Perfil actualizado exitosamente',
+            data: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                photo: user.photo
+            }
+        });
+    } catch (error) {
+        console.error('[ERROR] updateProfile:', error);
+        return res.status(500).json({ error: 'Error al actualizar perfil' });
+    }
+};
+
 const logout = async (req, res) => {
-    // En JWT el logout suele manejarse en el cliente invalidando el token,
-    // pero podemos retornar éxito para confirmación.
-    return res.status(200).json({ message: 'Sesión cerrada' });
+    try {
+        const token = req.token;
+        const decoded = jwt.decode(token);
+        const expires_at = new Date(decoded.exp * 1000); // Convertir Unix timestamp
+
+        await SessionBlacklist.create({
+            token,
+            user_id: req.user.id,
+            username: req.user.username,
+            expires_at
+        });
+
+        console.log(`[AUTH] Sesión cerrada para: ${req.user.username}. Token invalidado hasta ${expires_at.toISOString()}`);
+        return res.status(200).json({
+            message: `Sesión de '${req.user.username}' cerrada exitosamente`,
+            invalidated_at: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('[ERROR] logout:', error);
+        return res.status(500).json({ error: 'Error al cerrar sesión' });
+    }
 };
 
 module.exports = {
@@ -208,5 +316,7 @@ module.exports = {
     deleteUser,
     login,
     verifyMFA,
+    getProfile,
+    updateProfile,
     logout
 };
