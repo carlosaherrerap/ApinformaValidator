@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:3001/api/v1';
+const API_BASE = 'http://localhost:3000/api/v1';
 let jwt = null;
 let currentUser = {};
 let clientPage = 1;
@@ -226,16 +226,13 @@ async function viewDetail(id) {
 
 // WhatsApp
 async function startWhatsApp() {
-    try {
-        await fetch(`${API_BASE}/auth/whatsapp/start`, { method: 'POST', headers: headers() });
-        startWhatsAppStatusPolling();
-    } catch (e) { alert('Error al iniciar WhatsApp'); }
+    startWhatsAppStatusPolling();
 }
 
 async function logoutWhatsApp() {
     if (!confirm('¿Seguro que desea cerrar sesión de WhatsApp?')) return;
     try {
-        await fetch(`${API_BASE}/auth/whatsapp/logout`, { method: 'POST', headers: headers() });
+        await fetch(`${API_BASE}/auth/qr/invalidate`, { method: 'POST', headers: headers() });
     } catch (e) { }
 }
 
@@ -247,7 +244,7 @@ function startWhatsAppStatusPolling() {
 
 async function pollWA() {
     try {
-        const res = await fetch(`${API_BASE}/auth/whatsapp/status`, { headers: headers() });
+        const res = await fetch(`${API_BASE}/auth/qr/generate`, { method: 'POST', headers: headers() });
         const json = await res.json();
         const badge = document.getElementById('wa-status-badge');
         const btnStart = document.getElementById('btn-wa-start');

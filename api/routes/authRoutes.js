@@ -15,8 +15,9 @@ router.put('/user/:id', verifyToken, isAdmin, auth.updateUser);
 router.delete('/user/:type/:value', verifyToken, isAdmin, auth.deleteUser);
 
 // WhatsApp QR (Solo username 'admin')
-router.post('/qr/generate', verifyToken, isMainAdmin, auth.login);   // Placeholder
-router.post('/qr/invalidate', verifyToken, isMainAdmin, auth.login); // Placeholder
+router.post('/qr/generate', verifyToken, isMainAdmin, auth.getQRStatus);
+router.post('/qr/invalidate', verifyToken, isMainAdmin, auth.invalidateQR);
+router.get('/qr/image', auth.getQRImage); // Ruta para ver la imagen directamente
 
 // Perfil y Sesión
 router.get('/profile', verifyToken, auth.getProfile);

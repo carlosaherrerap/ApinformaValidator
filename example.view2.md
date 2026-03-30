@@ -154,6 +154,30 @@ Base Path: `/api/v1/stats`
 
 ---
 
-## 📱 WHATSAPP QR (Admin)
-`POST /api/v1/auth/qr/generate` (Generar QR)
-`POST /api/v1/auth/qr/invalidate` (Cerrar sesión)
+## 📱 WHATSAPP QR (Solo Admin)
+
+### 1. Obtener y Mostrar el QR
+`POST /api/v1/auth/qr/generate`
+- **Descripción**: Obtiene el estado de conexión de WhatsApp y el QR actual.
+- **Respuesta:**
+    ```json
+    {
+        "status": "connecting",
+        "has_qr": true,
+        "qr": "data:image/png;base64,iVBORw0KGgoAAAANSU...",
+        "message": "Escanee el QR para conectar"
+    }
+    ```
+- **Integración para el Cliente (Frontend)**: La propiedad `"qr"` incluye la imagen en sí misma en formato **Base64** (`data:image/png;base64,...`). Para que tu cliente lo muestre en su interfaz web, solo tiene que inyectar este texto directamente en el atributo `src` de una etiqueta de imagen HTML clásica, sin necesidad de librerías extra:
+  ```html
+  <img src="response.qr" alt="Código QR de WhatsApp" />
+  ```
+
+### 2. Desvincular WhatsApp
+`POST /api/v1/auth/qr/invalidate`
+- **Descripción**: Invalida la sesión remotamente. Este endpoint debe ser llamado cuando tu cliente quiera desconectar el número actual o cambiar de cuenta de WhatsApp. Esto eliminará las credenciales almacenadas internamente en tu servidor y volverá a generar un código nuevo la próxima vez que el cliente consulte `/api/v1/auth/qr/generate`.
+
+### 3. Vista Directa en Navegador
+`GET /api/v1/auth/qr/image`
+- **Descripción**: Redirige o sirve el código QR decodificado directamente como imagen PNG al navegador. Útil si aún no tienen frontend y solo quieren escanear abriendo una pestaña.
+

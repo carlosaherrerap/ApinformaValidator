@@ -3,7 +3,7 @@ const Role = require('../models/Role');
 const SessionBlacklist = require('../models/SessionBlacklist');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { sendWhatsApp } = require('../services/whatsappService');
+const { sendWhatsApp, getStatus: getWAStatus, logout: logoutWA } = require('../services/whatsappService');
 const { sendSMS } = require('../services/smsService');
 
 // LISTAR USUARIOS
@@ -377,6 +377,55 @@ const logout = async (req, res) => {
     }
 };
 
+// --- GESTIÓN WHATSAPP QR ---
+
+// Obtener estado y QR
+const getQRStatus = async (req, res) => {
+    try {
+        const wa = getWAStatus();
+        return res.status(200).json({
+            status: wa.status,
+            has_qr: wa.hasQR,
+            qr: wa.qr, // DataURL del QR
+            message: wa.status === 'connected' ? 'WhatsApp ya está conectado' : 'Escanee el QR para conectar'
+        });
+    } catch (error) {
+        return res.status(500).json({ error: 'Error al obtener estado de WhatsApp' });
+    }
+};
+
+// Servir QR como imagen (Direct view)
+const getQRImage = async (req, res) => {
+    try {
+        const wa = getWAStatus();
+        if (!wa.qr) {
+            return res.status(404).send('QR no disponible o WhatsApp ya está conectado.');
+        }
+
+        // Decodificar base64 a Buffer
+        const base64Data = wa.qr.replace(/^data:image\/png;base64,/, "");
+        const img = Buffer.from(base64Data, 'base64');
+
+        res.writeHead(200, {
+            'Content-Type': 'image/png',
+            'Content-Length': img.length
+        });
+        return res.end(img);
+    } catch (error) {
+        return res.status(500).send('Error al procesar imagen QR');
+    }
+};
+
+// Cerrar sesión y limpiar QR
+const invalidateQR = async (req, res) => {
+    try {
+        await logoutWA();
+        return res.status(200).json({ message: 'Sesión de WhatsApp cerrada y QR invalidado' });
+    } catch (error) {
+        return res.status(500).json({ error: 'Error al invalidar sesión de WhatsApp' });
+    }
+};
+
 module.exports = {
     listUsers,
     createUser,
@@ -386,5 +435,8 @@ module.exports = {
     verifyMFA,
     getProfile,
     updateProfile,
-    logout
+    logout,
+    getQRStatus,
+    getQRImage,
+    invalidateQR
 };
