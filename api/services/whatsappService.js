@@ -49,7 +49,6 @@ async function initWhatsApp() {
     sock = makeWASocket({
         version,
         auth: state,
-        printQRInTerminal: true,
         logger: pino({ level: 'silent' }),
         browser: ['Tokenizer Huancayo', 'Chrome', '120.0.0'],
         generateHighQualityLinkPreview: false
@@ -121,6 +120,10 @@ async function sendWhatsApp(number, message) {
 //Obtener estado actual de la conexión.
 
 function getStatus() {
+    if (connectionStatus === 'disconnected') {
+        console.log('[WA] Detectado estado desconectado al consultar QR. Reiniciando conexión...');
+        initWhatsApp();
+    }
     return {
         status: connectionStatus,
         hasQR: !!qrCode,

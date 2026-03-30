@@ -419,8 +419,44 @@ Módulo exclusivo para administradores. Requiere `Bearer Token` + rol ADMIN.
 ## 🛠️ Herramientas de Sistema
 
 ### 1. Gestión de WhatsApp QR (Solo username `admin`)
-*   **Generar QR:** `POST /auth/qr/generate`
-*   **Invalidar QR:** `POST /auth/qr/invalidate`
+
+Esta sección permite la vinculación del sistema con una cuenta de WhatsApp escaneando un código QR, similar a WhatsApp Web.
+
+#### A. Obtener Estado y Código QR
+*   **Endpoint:** `POST /auth/qr/generate`
+*   **Respuesta (Ejemplo cuando necesita conectarse):**
+    ```json
+    {
+        "status": "connecting",
+        "has_qr": true,
+        "qr": "data:image/png;base64,iVBORw0KGgoAAAANSU...",
+        "message": "Escanee el QR para conectar"
+    }
+    ```
+> [!TIP]
+> **¿Cómo mostrar el QR en el Frontend de tu cliente?**
+> El valor recibido en la propiedad `"qr"` incluye la imagen codificada en formato **Base64** con su cabecera `data URI`. Para que el frontend del cliente la visualice, **solo necesita inyectar o colocar ese valor directamente en una etiqueta HTML genérica**, sin librerías adicionales. Por ejemplo, en Javascript simple:
+> ```html
+> <img id="codigo-qr" src="" alt="WhatsApp QR" />
+> <script>
+>   document.getElementById('codigo-qr').src = response.qr;
+> </script>
+> ```
+
+#### B. Cerrar Sesión de WhatsApp (Desvincular)
+*   **Endpoint:** `POST /auth/qr/invalidate`
+*   **Descripción:** Utilice este endpoint cuando desee cerrar la sesión de WhatsApp activa. Esto borrará el caché y las credenciales que el servidor de NodeJS almacenó del anterior dispositivo (`whatsapp_auth`), obligando al sistema a generar un nuevo código QR al volver a consultar `/auth/qr/generate`. Ideal para cuando se cambia el teléfono receptor o falla la conexión persistente.
+*   **Respuesta:**
+    ```json
+    {
+        "message": "Sesión de WhatsApp cerrada y QR invalidado"
+    }
+    ```
+
+#### C. Vista Directa en Navegador
+*   **Endpoint:** `GET /auth/qr/image`
+*   **Descripción:** Un endpoint de conveniencia. No entrega un JSON, sino que sirve la imagen PNG de forma pura y directa al navegador. Excelente para verificar si el código se está dibujando bien sin tener un frontend o consumiendo por URL directa.
+
 
 ### 2. Salud del Sistema
 *   **Health Check:** `GET /api/v1/status`
@@ -443,6 +479,10 @@ Módulo exclusivo para administradores. Requiere `Bearer Token` + rol ADMIN.
 3.  **Auth (User):** Use `Bearer Token` para el resto de endpoints una vez obtenido el JWT.
 
 ----------------------------
+
+http://localhost:3001/api/v1/auth/qr/image <---MUESTRA LA IMAGEN DE QR
+
+
 
 
 Usuario: api_manager

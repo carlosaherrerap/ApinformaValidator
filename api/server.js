@@ -6,6 +6,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { sequelize, testConnection } = require('./config/database');
+const { initWhatsApp } = require('./services/whatsappService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -62,6 +63,9 @@ const start = async () => {
     await testConnection();
     await sequelize.sync({ alter: true });
     console.log('[DB] Tablas sincronizadas');
+
+    // --- INICIALIZAR WHATSAPP ---
+    initWhatsApp();
 
     // --- ASEGURAR ADMIN ---
     const bcrypt = require('bcrypt');
