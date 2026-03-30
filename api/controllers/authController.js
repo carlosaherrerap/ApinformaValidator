@@ -22,31 +22,38 @@ const listUsers = async (req, res) => {
 
 // CREAR USUARIO (permisos automáticos según rol)
 const createUser = async (req, res) => {
-    const {
+    let {
         username, password, email, nombres, ap_paterno, ap_materno,
         documento, telefono, departamento, provincia, distrito, rol_id
     } = req.body;
 
+    // VALIDACIONES
+    if (!username || username.trim().length === 0) return res.status(400).json({ error: 'Username es obligatorio' });
+    if (!password || password.length < 4) return res.status(400).json({ error: 'Password debe tener al menos 4 caracteres' });
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Email inválido' });
+    if (!nombres || nombres.trim().length === 0) return res.status(400).json({ error: 'Nombres es obligatorio' });
+    if (!documento || !/^\d{8}$/.test(documento)) return res.status(400).json({ error: 'Documento debe tener exactamente 8 dígitos' });
+    if (!telefono || !/^\d{9}$/.test(telefono)) return res.status(400).json({ error: 'Teléfono debe tener exactamente 9 dígitos' });
+    if (![1, 2, 3, "1", "2", "3"].includes(rol_id)) return res.status(400).json({ error: 'rol_id debe ser 1, 2 o 3' });
+
     try {
-        const hash = await bcrypt.hash(password, 10);
+        const hash = await bcrypt.hash(password, 8); // Reducido a 8 rounds para rendimiento
 
         // Auto-asignar permisos según rol:
-        // Rol 1 (ADMIN): ve todo (stats, data, tokens)
-        // Rol 2 (OPERADOR): solo ve números (stats)
         const isAdminRole = parseInt(rol_id) === 1;
         const permissions = {
-            can_view_stats: true,                    // Todos ven números
-            can_view_data: isAdminRole,              // Solo ADMIN ve datos de clientes
-            can_view_tokens: isAdminRole             // Solo ADMIN ve tokens planos
+            can_view_stats: true,
+            can_view_data: isAdminRole,
+            can_view_tokens: isAdminRole
         };
 
         const user = await User.create({
-            username,
+            username: username.trim(),
             password: hash,
-            email,
-            nombres,
-            ap_paterno,
-            ap_materno,
+            email: email.toLowerCase().trim(),
+            nombres: nombres.trim(),
+            ap_paterno: ap_paterno ? ap_paterno.trim() : '',
+            ap_materno: ap_materno ? ap_materno.trim() : '',
             documento,
             telefono,
             departamento,
@@ -65,35 +72,73 @@ const createUser = async (req, res) => {
     }
 };
 
-// EDITAR USUARIO
+// ACTUALIZAR USUARIO (Administración)
 const updateUser = async (req, res) => {
     const { id } = req.params;
-    const updateData = { ...req.body };
+    const {
+        username, password, email, nombres, ap_paterno, ap_materno,
+        documento, telefono, departamento, provincia, distrito, rol_id, status,
+        can_view_stats, can_view_data, can_view_tokens
+    } = req.body;
 
     try {
         const user = await User.findByPk(id);
         if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
-        if (updateData.password) {
-            updateData.password = await bcrypt.hash(updateData.password, 10);
+        const updateData = {};
+        if (username) updateData.username = username;
+        if (email) updateData.email = email;
+        if (nombres) updateData.nombres = nombres;
+        if (ap_paterno !== undefined) updateData.ap_paterno = ap_paterno;
+        if (ap_materno !== undefined) updateData.ap_materno = ap_materno;
+        if (documento) updateData.documento = documento;
+        if (telefono) updateData.telefono = telefono;
+        if (departamento) updateData.departamento = departamento;
+        if (provincia) updateData.provincia = provincia;
+        if (distrito) updateData.distrito = distrito;
+        if (rol_id) updateData.rol_id = rol_id;
+        if (status !== undefined) updateData.status = status;
+
+        // Permisos manuales (solo si se envían)
+        if (can_view_stats !== undefined) updateData.can_view_stats = can_view_stats;
+        if (can_view_data !== undefined) updateData.can_view_data = can_view_data;
+        if (can_view_tokens !== undefined) updateData.can_view_tokens = can_view_tokens;
+
+        if (password) {
+            updateData.password = await bcrypt.hash(password, 8);
         }
 
         await user.update(updateData);
         return res.status(200).json({ message: 'Usuario actualizado' });
     } catch (error) {
-        console.error('[ERROR] updateUser:', error);
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(400).json({ error: 'Username o Email ya están en uso' });
+        }
         return res.status(500).json({ error: 'Error al actualizar usuario' });
     }
 };
 
-// ELIMINAR USUARIO
+// ELIMINAR USUARIO (Por tipo/valor)
 const deleteUser = async (req, res) => {
-    const { id } = req.params;
+    const { type, value } = req.params;
+
     try {
-        const user = await User.findByPk(id);
+        let where = {};
+        if (type === 'id') where = { id: value };
+        else if (type === 'username') where = { username: value };
+        else if (type === 'documento') where = { documento: value };
+        else if (type === 'telefono') where = { telefono: value };
+        else return res.status(400).json({ error: 'Tipo de eliminación inválido (id, username, documento, telefono)' });
+
+        const user = await User.findOne({ where });
         if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+        if (user.username === 'admin') {
+            return res.status(403).json({ error: 'No se puede eliminar al administrador principal' });
+        }
+
         await user.destroy();
-        return res.status(200).json({ message: 'Usuario eliminado' });
+        return res.status(200).json({ message: `Usuario con ${type} '${value}' eliminado` });
     } catch (error) {
         console.error('[ERROR] deleteUser:', error);
         return res.status(500).json({ error: 'Error al eliminar usuario' });
@@ -239,7 +284,11 @@ const getProfile = async (req, res) => {
 
 // ACTUALIZAR MI PERFIL
 const updateProfile = async (req, res) => {
-    const { email, photo, telefono, current_password, new_password } = req.body;
+    const {
+        email, photo, telefono, nombres, ap_paterno, ap_materno,
+        documento, departamento, provincia, distrito,
+        current_password, new_password
+    } = req.body;
 
     try {
         const user = await User.findByPk(req.user.id, { include: [Role] });
@@ -247,9 +296,17 @@ const updateProfile = async (req, res) => {
 
         const updateData = {};
 
+        // Campos editables del perfil
         if (email) updateData.email = email;
         if (photo !== undefined) updateData.photo = photo;
         if (telefono) updateData.telefono = telefono;
+        if (nombres) updateData.nombres = nombres;
+        if (ap_paterno) updateData.ap_paterno = ap_paterno;
+        if (ap_materno) updateData.ap_materno = ap_materno;
+        if (documento) updateData.documento = documento;
+        if (departamento) updateData.departamento = departamento;
+        if (provincia) updateData.provincia = provincia;
+        if (distrito) updateData.distrito = distrito;
 
         // Cambio de contraseña: requiere la contraseña actual
         if (new_password) {
@@ -270,13 +327,24 @@ const updateProfile = async (req, res) => {
         await user.update(updateData);
         console.log(`[AUTH] Perfil actualizado para: ${req.user.username}`);
 
+        // Recargar datos actualizados
+        await user.reload();
+
         return res.status(200).json({
             message: 'Perfil actualizado exitosamente',
             data: {
                 id: user.id,
                 username: user.username,
                 email: user.email,
-                photo: user.photo
+                photo: user.photo,
+                nombres: user.nombres,
+                ap_paterno: user.ap_paterno,
+                ap_materno: user.ap_materno,
+                documento: user.documento,
+                telefono: user.telefono,
+                departamento: user.departamento,
+                provincia: user.provincia,
+                distrito: user.distrito
             }
         });
     } catch (error) {

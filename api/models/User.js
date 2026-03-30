@@ -91,7 +91,15 @@ const User = sequelize.define('usuario', {
         type: DataTypes.DATE,
         allowNull: true
     }
-}, { tableName: 'usuario' });
+}, {
+    tableName: 'usuario',
+    indexes: [
+        { unique: true, fields: ['username'] },
+        { unique: true, fields: ['email'] },
+        { fields: ['documento'] },
+        { fields: ['telefono'] }
+    ]
+});
 
 Role.hasMany(User, { foreignKey: 'rol_id' });
 User.belongsTo(Role, { foreignKey: 'rol_id' });

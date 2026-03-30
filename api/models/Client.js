@@ -59,6 +59,12 @@ const Client = sequelize.define('cliente', {
         type: DataTypes.BOOLEAN,
         defaultValue: false
     }
-}, { tableName: 'cliente' });
+}, {
+    tableName: 'cliente',
+    indexes: [
+        { unique: true, fields: ['documento'] },
+        { fields: ['celular'] }
+    ]
+});
 
 module.exports = Client;

@@ -12,7 +12,7 @@ router.post('/login/mfa', clientAuth, auth.verifyMFA);
 router.get('/users', verifyToken, isAdmin, auth.listUsers);
 router.post('/user', verifyToken, isAdmin, auth.createUser);
 router.put('/user/:id', verifyToken, isAdmin, auth.updateUser);
-router.delete('/user/:id', verifyToken, isAdmin, auth.deleteUser);
+router.delete('/user/:type/:value', verifyToken, isAdmin, auth.deleteUser);
 
 // WhatsApp QR (Solo username 'admin')
 router.post('/qr/generate', verifyToken, isMainAdmin, auth.login);   // Placeholder

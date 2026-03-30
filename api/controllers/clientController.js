@@ -547,7 +547,7 @@ const getCooldownStatus = async (req, res) => {
     }
 };
 
-// BUSCAR CLIENTE POR DOCUMENTO или CELULAR
+// BUSCAR CLIENTE POR DOCUMENTO O CELULAR
 const searchClient = async (req, res) => {
     const { type, value } = req.params;
 
@@ -566,7 +566,7 @@ const searchClient = async (req, res) => {
             include: [
                 {
                     model: Token,
-                    attributes: ['codigo', 'via', 'status', 'created_at', 'updated_at']
+                    attributes: ['id', 'codigo_hash', 'via', 'status', 'created_at', 'updated_at']
                 }
             ]
         });

@@ -6,17 +6,32 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
     dialect: 'postgres',
     logging: false,
     timezone: '-05:00',
+    dialectOptions: {
+        useUTC: false,
+        dateStrings: true,
+        typeCast: true
+    },
     define: {
         timestamps: true,
         underscored: true,
         freezeTableName: true
     },
     pool: {
-        max: 10,
-        min: 2,
-        acquire: 30000,
+        max: 20, // Aumentado para mejor concurrencia
+        min: 5,
+        acquire: 60000,
         idle: 10000
+    },
+    hooks: {
+        beforeConnect: async (config) => {
+            // Eliminar posibles lags en búsqueda de hosts
+        }
     }
+});
+
+// Forzar zona horaria en cada conexión
+sequelize.addHook('afterConnect', async (connection) => {
+    await connection.query("SET TIME ZONE 'America/Lima';");
 });
 
 //TEST DE CONEXION A LA BASE DE DATOS

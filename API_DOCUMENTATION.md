@@ -3,7 +3,7 @@
 Esta documentación técnica cataloga todos los recursos disponibles en la API de Tokenizer, organizados por módulos y flujo de operación.
 
 > [!IMPORTANT]
-> **Base URL:** `http://localhost:3000/api/v1`
+> **Base URL:** `http://localhost:3001/api/v1` (Puerto 3001 si usas Docker)
 >
 > **Simulación y Control Global:** 
 > - Para pruebas individuales: Añada el header `x-simulator: true` en la petición.
@@ -11,7 +11,15 @@ Esta documentación técnica cataloga todos los recursos disponibles en la API d
 
 ---
 
-## 🔑 Matriz de Permisos por Rol
+## � Duración de Sesiones e Invalidación
+
+- **Token de Sesión (JWT):** Expira en **8 horas** (`expires_in: 28800`).
+- **Logout:** Invalida el token inmediatamente mediante blacklist en DB.
+- **MFA Code:** Expira en **5 minutos**.
+
+---
+
+## �🔑 Matriz de Permisos por Rol
 
 | Recurso | Rol 1 (ADMIN) | Rol 2 (OPERADOR) |
 |---------|:---:|:---:|
@@ -20,6 +28,7 @@ Esta documentación técnica cataloga todos los recursos disponibles en la API d
 | Tokens Planos | ✅ | ❌ |
 | Gestión de Usuarios CRUD | ✅ | ❌ |
 | WhatsApp QR | Solo `admin` | ❌ |
+| **Búsqueda de Cliente** | ✅ (Admin) | ❌ (Prohibido) |
 
 > [!NOTE]
 > Los permisos `can_view_stats`, `can_view_data` y `can_view_tokens` se asignan **automáticamente** al crear un usuario según su `rol_id`.
@@ -101,8 +110,14 @@ Este módulo implementa un flujo de seguridad de dos pasos:
             "username": "admin",
             "role": "ADMIN",
             "email": "admin@tokenizer.pe",
-            "photo": null,
             "nombres": "Administrador",
+            "ap_paterno": "Perez",
+            "ap_materno": "Gomez",
+            "documento": "12345678",
+            "telefono": "987654321",
+            "departamento": "JUNIN",
+            "provincia": "HUANCAYO",
+            "distrito": "EL TAMBO",
             "can_view_stats": true,
             "can_view_data": true,
             "can_view_tokens": true
@@ -110,15 +125,22 @@ Este módulo implementa un flujo de seguridad de dos pasos:
     }
     ```
 
-#### E. Modificar Mi Perfil
+#### E. Modificar Mi Perfil (Full)
 *   **Endpoint:** `PUT /auth/profile`
 *   **Header:** `Authorization: Bearer [JWT]`
-*   **Payload (todos los campos son opcionales):**
+*   **Payload (Todos los campos opcionales):**
     ```json
     {
+        "nombres": "Juan",
+        "ap_paterno": "Perez",
+        "ap_materno": "Soto",
+        "documento": "12345678",
         "email": "nuevo@correo.com",
-        "photo": "https://url-de-mi-foto.com/avatar.png",
         "telefono": "999888777",
+        "departamento": "LIMA",
+        "provincia": "LIMA",
+        "distrito": "MIRAFLORES",
+        "photo": "https://url-de-mi-foto.com",
         "current_password": "claveActual",
         "new_password": "claveNueva2026"
     }
@@ -127,12 +149,7 @@ Este módulo implementa un flujo de seguridad de dos pasos:
     ```json
     {
         "message": "Perfil actualizado exitosamente",
-        "data": {
-            "id": "uuid",
-            "username": "admin",
-            "email": "nuevo@correo.com",
-            "photo": "https://url-de-mi-foto.com/avatar.png"
-        }
+        "data": { "id": "uuid", "username": "admin", "email": "nuevo@correo.com", "..." : "..." }
     }
     ```
 
@@ -284,9 +301,16 @@ Módulo que gestiona la validación de identidad para clientes externos.
     }
     ```
 
-#### Búsqueda Rápida
+#### Búsqueda Rápida (SÓLO ADMIN)
 *   **Endpoint:** `GET /client/:type/:value`
-*   **Descripción:** Busca por `documento` o `telefono`.
+*   **Auth:** `Bearer Token` requerido + Rol ADMIN.
+*   **Descripción:** Busca por `documento` o `telefono`. Los operadores (Rol 2) reciben `403 Forbidden`. Oculta el código en texto plano por seguridad, devolviendo solo el `codigo_hash`.
+
+> [!WARNING]
+> **Sobre el Hashing:** La API utiliza **Bcrypt** (Cost: 8) para encriptar los tokens. 
+> 1. Es un algoritmo de **un solo sentido (irreversible)**. No existe una librería para "desencriptar" el hash y obtener el token original.
+> 2. Si necesita ver el token original por auditoría, use el endpoint: `GET /stats/tokens/:tokenId` (Solo Admin).
+
 *   **Ejemplo:** `GET /client/documento/12345678`
 *   **Respuesta:**
     ```json
@@ -295,15 +319,13 @@ Módulo que gestiona la validación de identidad para clientes externos.
             "id": "uuid",
             "documento": "12345678",
             "nombres": "Juan",
-            "ap_paterno": "Perez",
-            "celular": "987654321",
-            "estado": true,
             "tokens": [
                 {
-                    "codigo": "TK9h",
+                    "id": "uuid-token",
+                    "codigo_hash": "$2b$08$...",
                     "via": "S",
                     "status": "V",
-                    "created_at": "2026-02-24T..."
+                    "created_at": "2026-02-25 09:15:00"
                 }
             ]
         }
@@ -316,44 +338,43 @@ Módulo que gestiona la validación de identidad para clientes externos.
 
 Módulo exclusivo para administradores. Requiere `Bearer Token` + rol ADMIN.
 
--   **Listar Todos:** `GET /auth/users`
--   **Crear:** `POST /auth/user`
-    *   **Payload:**
-        ```json
-        {
-            "username": "operador1",
-            "password": "clavesecreta2026",
-            "email": "operador1@tokenizer.pe",
-            "nombres": "Juan",
-            "ap_paterno": "Luna",
-            "ap_materno": "Soto",
-            "documento": "77889900",
-            "telefono": "944556677",
-            "departamento": "JUNIN",
-            "provincia": "HUANCAYO",
-            "distrito": "EL TAMBO",
-            "rol_id": 2
-        }
-        ```
-    > Los permisos (`can_view_stats`, `can_view_data`, `can_view_tokens`) se asignan automáticamente según el `rol_id`.
-    *   **Respuesta:**
-        ```json
-        {
-            "message": "Usuario creado",
-            "data": { "id": "uuid", "username": "operador1", "rol_id": 2, "can_view_stats": true, "can_view_data": false, "can_view_tokens": false }
-        }
-        ```
--   **Editar:** `PUT /auth/user/:id` (Acepta los mismos campos de forma opcional).
-    *   **Respuesta:** `{ "message": "Usuario actualizado" }`
--   **Eliminar:** `DELETE /auth/user/:id`
-    *   **Respuesta:** `{ "message": "Usuario eliminado" }`
+#### B. Crear Usuario (ADMIN)
+*   **Endpoint:** `POST /auth/user`
+*   **Payload con Validaciones:**
+    ```json
+    {
+        "username": "asesor5",      // Único, obligatorio
+        "password": "clavesecreta", // Mínimo 4 caracteres
+        "email": "asesor5@tok.pe",  // Formato email válido
+        "nombres": "Juan",          // Obligatorio
+        "ap_paterno": "Perez",    
+        "documento": "12345678",    // Exactamente 8 dígitos
+        "telefono": "987654321",    // Exactamente 9 dígitos
+        "rol_id": 2                 // 1 (Admin), 2 (Operador) o 3
+    }
+    ```
+
+#### C. Editar Usuario (ADMIN)
+*   **Endpoint:** `PUT /auth/user/:id`
+*   **Descripción:** Acepta todos los campos anteriores de forma opcional.
+
+#### D. Eliminar Usuario (Flexible)
+*   **Endpoint:** `DELETE /auth/user/:type/:value`
+*   **Ejemplos:**
+    - `DELETE /auth/user/username/asesor5`
+    - `DELETE /auth/user/documento/12345678`
+    - `DELETE /auth/user/telefono/987654321`
 
 ---
-
+// ME QUEDE AQUI DOCUMENTANDO 
 ## 📊 Estadísticas e Informes
+
+> [!TIP]
+> **Filtrado RESTful:** El uso de query params como `stats/clients?page=1&limit=20&search=Juan&estado=true` es **totalmente correcto** y es el estándar de la industria para APIs REST paginadas y filtrables.
 
 | Endpoint | Permiso Requerido | Rol 1 | Rol 2 |
 |----------|-------------------|:---:|:---:|
+
 | `GET /stats/dashboard` | `can_view_stats` | ✅ | ✅ |
 | `GET /stats/clients` | `can_view_data` | ✅ | ❌ |
 | `GET /stats/clients/:id` | `can_view_data` | ✅ | ❌ |
@@ -417,6 +438,21 @@ Módulo exclusivo para administradores. Requiere `Bearer Token` + rol ADMIN.
 
 ## 🚀 Guía para Postman
 
-1.  **Variables:** Use `{{base_url}}` para `http://localhost:3000/api/v1`.
+1.  **Variables:** Use `{{base_url}}` para `http://localhost:3001/api/v1`.
 2.  **Auth (App):** Use `Basic Auth` con Client ID y Secret para Login/MFA.
 3.  **Auth (User):** Use `Bearer Token` para el resto de endpoints una vez obtenido el JWT.
+
+----------------------------
+
+
+Usuario: api_manager
+Contraseña: api_secure_vault_2026
+Base de Datos: TOKENIZER_HUANCAYO
+Host: localhost
+Puerto: 5432 (o 5433 si usas el mapeo externo de Docker).
+
+
+Usuario: admin
+Clave: admin2026
+Client ID: token_client_2026
+Client Secret: secret_client_vault_2026

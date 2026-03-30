@@ -18,7 +18,7 @@ services:
     container_name: tokenizer_api
     restart: always
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       DATABASE_URL: postgres://api_manager:api_secure_vault_2026@db:5432/TOKENIZER_HUANCAYO
       PORT: 3000
